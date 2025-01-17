@@ -1,0 +1,14 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        
+        {
+            "label": "Run Setup Script",
+            "type": "shell",
+            "command": "/home/hamit/Softwares/gstreamer/gst-env.py",
+            "args": [   // Path to your setup script
+            ],
+            "problemMatcher": []
+        }
+    ]
+}

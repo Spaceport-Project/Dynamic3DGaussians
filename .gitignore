@@ -2,3 +2,8 @@ __pycache__/
 .idea/
 data/
 output/
+gst_cuda_wrapper/
+.py
+encoders/dist
+encoders/build
+encoders/*.so
