@@ -1,0 +1,11 @@
+colmap feature_extractor  --database_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/database.db --image_path  /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/input/  --ImageReader.camera_model OPENCV --SiftExtraction.max_image_size 3200  --SiftExtraction.max_num_features 12000 --ImageReader.single_camera 0 --SiftExtraction.use_gpu 0 --SiftExtraction.num_threads 16  --SiftExtraction.domain_size_pooling true --SiftExtraction.estimate_affine_shape true
+
+colmap exhaustive_matcher  --database_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/database.db   --SiftMatching.max_num_matches 50000 --SiftMatching.use_gpu 0 --SiftMatching.guided_matching true
+
+colmap point_triangulator  --database_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/database.db --image_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/input/ --input_path  /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/model/  --output_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/output
+
+colmap image_undistorter  --image_path  /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/input/  --input_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/output/ --output_path  /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/dense/
+
+colmap patch_match_stereo --workspace_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/dense/
+
+colmap stereo_fusion --workspace_path  /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/dense/  --output_path   /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-650/colmap_input_nocampose_calculation/dense/fused.ply

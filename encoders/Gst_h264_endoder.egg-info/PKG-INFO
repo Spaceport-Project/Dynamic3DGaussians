@@ -1,0 +1,4 @@
+Metadata-Version: 2.1
+Name: Gst-h264-endoder
+Version: 1.0
+Summary: A sample C++ extension to encode images using Gstreamer and pybind11

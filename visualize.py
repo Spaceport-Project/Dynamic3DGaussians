@@ -4,10 +4,11 @@ import numpy as np
 import open3d as o3d
 import time
 from diff_gaussian_rasterization import GaussianRasterizer as Renderer
-from helpers import setup_camera, quat_mult
+from helpers import setup_camera, quat_mult, searchForMaxIteration
 from external import build_rotation
 from colormap import colormap
 from copy import deepcopy
+import torchvision
 
 RENDER_MODE = 'color'  # 'color', 'depth' or 'centers'
 # RENDER_MODE = 'depth'  # 'color', 'depth' or 'centers'
@@ -23,18 +24,49 @@ REMOVE_BACKGROUND = False  # False or True
 FORCE_LOOP = False  # False or True
 # FORCE_LOOP = True  # False or True
 
-w, h = 640, 360
+w, h = 1920, 1080
 near, far = 0.01, 100.0
-view_scale = 3.9
-fps = 20
+view_scale = 1
+fps = 30
 traj_frac = 25  # 4% of points
 traj_length = 15
 def_pix = torch.tensor(
     np.stack(np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5, 1), -1).reshape(-1, 3)).cuda().float()
 pix_ones = torch.ones(h * w, 1).cuda().float()
+cnt=0
 
 
-def init_camera(y_angle=0., center_dist=2.4, cam_height=1.3, f_ratio=0.82):
+def create_axes():
+    points = [
+        [0, 0, 0],
+        [2, 0, 0],
+        [0, 2, 0],
+        [0, 0, 2]
+        ]
+    lines = [
+    [0, 1],
+    [0, 2],
+    [0, 3],
+    ]
+    colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    line_set = o3d.geometry.LineSet(
+        points=o3d.utility.Vector3dVector(points),
+        lines=o3d.utility.Vector2iVector(lines),
+    )
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+    return line_set
+
+def get_center_init_pcd(seq,exp):
+    init_pt_cld = np.load(f"./output/{exp}/{seq}/init_pt_cld.npz")["data"]
+    xyz = init_pt_cld[:, :3]
+    seg = init_pt_cld[:, 6]
+    xyz_fg = [pos[:3] for id, pos in enumerate(xyz) if seg[id] == 1  ]
+    center_fg = np.mean(np.asarray(xyz_fg), axis=0)
+    return center_fg
+
+    
+
+def init_camera(y_angle=0., center_dist=4, cam_height=-0.5, f_ratio=0.82):
     ry = y_angle * np.pi / 180
     w2c = np.array([[np.cos(ry), 0., -np.sin(ry), 0.],
                     [0.,         1., 0.,          cam_height],
@@ -45,7 +77,14 @@ def init_camera(y_angle=0., center_dist=2.4, cam_height=1.3, f_ratio=0.82):
 
 
 def load_scene_data(seq, exp, seg_as_col=False):
-    params = dict(np.load(f"./output/{exp}/{seq}/params.npz"))
+    
+    max_iter = searchForMaxIteration(f"./output/{exp}/{seq}")
+    if max_iter is None:
+        params = dict(np.load(f"./output/{exp}/{seq}/params.npz"))
+    else:
+        params = dict(np.load(f"./output/{exp}/{seq}/params_{max_iter}.npz"))
+        print(f"Loading params_{max_iter}.npz file")
+
     params = {k: torch.tensor(v).cuda().float() for k, v in params.items()}
     is_fg = params['seg_colors'][:, 0] > 0.5
     scene_data = []
@@ -108,9 +147,14 @@ def calculate_rot_vec(scene_data, is_fg):
 
 
 def render(w2c, k, timestep_data):
+    global cnt
     with torch.no_grad():
-        cam = setup_camera(w, h, k, w2c, near, far)
+        cam = setup_camera(w, h, k, w2c, near, far, bg=torch.tensor([0,0,0])) #[0, 177./255, 64.0/255]
         im, _, depth, = Renderer(raster_settings=cam)(**timestep_data)
+        # im[~is_fg] =  torch.tensor([0, 177./255, 64.0/255], dtype=torch.float32, device="cuda")
+        # torchvision.utils.save_image(im, '{0:05d}'.format(cnt) + ".png")
+        cnt+=1
+
         return im, depth
 
 
@@ -122,6 +166,7 @@ def rgbd2pcd(im, depth, w2c, k, show_depth=False, project_to_cam_w_scale=None):
     radial_depth = depth[0].reshape(-1)
     def_rays = (invk @ def_pix.T).T
     def_radial_rays = def_rays / torch.linalg.norm(def_rays, ord=2, dim=-1)[:, None]
+
     pts_cam = def_radial_rays * radial_depth[:, None]
     z_depth = pts_cam[:, 2]
     if project_to_cam_w_scale is not None:
@@ -134,11 +179,14 @@ def rgbd2pcd(im, depth, w2c, k, show_depth=False, project_to_cam_w_scale=None):
         cols = torch.permute(im, (1, 2, 0)).reshape(-1, 3)
     pts = o3d.utility.Vector3dVector(pts.contiguous().double().cpu().numpy())
     cols = o3d.utility.Vector3dVector(cols.contiguous().double().cpu().numpy())
+    
     return pts, cols
 
 
 def visualize(seq, exp):
-    scene_data, is_fg = load_scene_data(seq, exp)
+
+    center = get_center_init_pcd(seq, exp)
+    scene_data, is_fg = load_scene_data(seq, exp, seg_as_col=False)
 
     vis = o3d.visualization.Visualizer()
     vis.create_window(width=int(w * view_scale), height=int(h * view_scale), visible=True)
@@ -149,7 +197,16 @@ def visualize(seq, exp):
     pcd = o3d.geometry.PointCloud()
     pcd.points = init_pts
     pcd.colors = init_cols
+    # o3d.io.write_point_cloud("init_pt_cloud.ply", pcd)
+
+
+    print(center)
+    # axes = create_axes()
+    # vis.add_geometry(axes)
+
     vis.add_geometry(pcd)
+    # view_ctl = vis.get_view_control()
+    # view_ctl.set_lookat(center)
 
     linesets = None
     lines = None
@@ -173,7 +230,7 @@ def visualize(seq, exp):
     cparams.intrinsic.height = int(h * view_scale)
     cparams.intrinsic.width = int(w * view_scale)
     view_control.convert_from_pinhole_camera_parameters(cparams, allow_arbitrary=True)
-
+    view_control.set_lookat(center)
     render_options = vis.get_render_option()
     render_options.point_size = view_scale
     render_options.light_on = False
@@ -210,7 +267,10 @@ def visualize(seq, exp):
             pts, cols = rgbd2pcd(im, depth, w2c, k, show_depth=(RENDER_MODE == 'depth'))
         pcd.points = pts
         pcd.colors = cols
+        # o3d.io.write_point_cloud("point_cloud.ply", pcd)
+
         vis.update_geometry(pcd)
+
 
         if ADDITIONAL_LINES is not None:
             if ADDITIONAL_LINES == 'trajectories':
@@ -233,6 +293,31 @@ def visualize(seq, exp):
 
 
 if __name__ == "__main__":
-    exp_name = "pretrained"
-    for sequence in ["basketball", "boxes", "football", "juggle", "softball", "tennis"]:
+    # exp_name = "pretrained"
+    # for sequence in ["basketball", "boxes", "football", "juggle", "softball", "tennis"]:
+    # exp_name = "exp_black_onlyoguz_scl_2_full"
+    # exp_name = "exp_only_oguz_2_scl_4_it_500_20cams"
+    # for sequence in ["oguz_2"]:
+
+    # exp_name = "exp_only_oguz_2_scl_4_it_500_green_test2"
+    # exp_name = "exp_witback_oguz_2_scl_4_it_500_green_test"
+    # exp_name = "yoga_wo_background_onlypt_scale_4_it_500"
+
+    # exp_name = "exp_withbck_test"
+    # exp_name = "exp_withbck_scl_2_reduced"
+    # exp_name = "exp_withbck_scl_2_it_500"
+    # exp_name = "exp_withbck_scl_4_it_500"
+
+    # exp_name = "yoga_wo_background_onlypt_scale_4_it_500_pose_1_4"
+    # for sequence in ["10-09-2024_data/pose_1_4"]:
+    # for sequence in ["10-09-2024_data/pose_1_3"]:
+    
+    # exp_name ="yoga_pose_1_4_only_test2"
+    # exp_name = "yoga_wo_background_onlypt_scale_4_it_500_pose_1_4_all"
+
+    # for sequence in ["10-09-2024_data/pose_1_3"]:
+    exp_name ="oguz_2_calib_scl_4_test2"
+
+    for sequence in ["oguz_2_calib"]:
+
         visualize(sequence, exp_name)

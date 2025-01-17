@@ -17,12 +17,12 @@ jonoluiten@gmail.com
 ## Installation
 ```bash
 # Install this repo (pytorch)
-git clone git@github.com:JonathonLuiten/Dynamic3DGaussians.git
+git clone https://github.com/Spaceport-Project/Dynamic3DGaussians.git
 conda env create --file environment.yml
 conda activate dynamic_gaussians
 
 # Install rendering code (cuda)
-git clone git@github.com:JonathonLuiten/diff-gaussian-rasterization-w-depth.git
+git clone https://github.com/JonathonLuiten/diff-gaussian-rasterization-w-depth.git
 cd diff-gaussian-rasterization-w-depth
 python setup.py install
 pip install .

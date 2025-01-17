@@ -1,0 +1,7 @@
+gst_h264_endoder_pipeline.cpp
+setup.py
+setup_gstreamer_h264_enc.py
+Gst_h264_endoder.egg-info/PKG-INFO
+Gst_h264_endoder.egg-info/SOURCES.txt
+Gst_h264_endoder.egg-info/dependency_links.txt
+Gst_h264_endoder.egg-info/top_level.txt

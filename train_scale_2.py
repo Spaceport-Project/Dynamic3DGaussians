@@ -3,30 +3,73 @@ import os
 import json
 import copy
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 from random import randint
 from tqdm import tqdm
 from diff_gaussian_rasterization import GaussianRasterizer as Renderer
 from helpers import setup_camera, l1_loss_v1, l1_loss_v2, weighted_l2_loss_v1, weighted_l2_loss_v2, quat_mult, \
     o3d_knn, params2rendervar, params2cpu, save_params
 from external import calc_ssim, calc_psnr, build_rotation, densify, update_params_and_optimizer
+import shutil
 
+class CustomError(Exception):
+  pass
 
-def get_dataset(t, md, seq):
+def get_dataset(t, md, seq, iters, scale=1):
     dataset = []
     for c in range(len(md['fn'][t])):
         w, h, k, w2c = md['w'], md['h'], md['k'][t][c], md['w2c'][t][c]
-        cam = setup_camera(w, h, k, w2c, near=1.0, far=100)
+        cam = setup_camera(w, h, k, w2c, near=1.0, far=100, scale=scale)
         fn = md['fn'][t][c]
-        im = np.array(copy.deepcopy(Image.open(f"./data/{seq}/ims/{fn}")))
-        im = torch.tensor(im).float().cuda().permute(2, 0, 1) / 255
-        seg = np.array(copy.deepcopy(Image.open(f"./data/{seq}/seg/{fn.replace('.jpg', '.png')}"))).astype(np.float32)
-        # res= np.where(seg > 0)
-        # result = seg[res]
+        im_file_path = f"./data/{seq}/ims/{fn}"
+        seg_file_path = f"./data/{seq}/seg/{fn}"
+        if not os.path.exists(im_file_path):
+            print(f"{im_file_path} is missing, trying to find the possible image from next timestamps")
+            it = iter(iters)
+            while True:
+                item = next(it, None)
+                next_im_file_path = f"./data/{seq}/ims/{md['fn'][item][c]}"
+                next_seg_file_path = f"./data/{seq}/seg/{md['fn'][item][c]}"
+                if os.path.exists(next_im_file_path):
+                    shutil.copy2(next_im_file_path, im_file_path)
+                    shutil.copy2(next_seg_file_path, seg_file_path)
+                    break
+                if item is None:
+                    raise CustomError("No succesive image found in 5 next timestamps")
 
-        seg = torch.tensor(seg).float().cuda()
-        seg_col = torch.stack((seg, torch.zeros_like(seg), 1 - seg))
-        dataset.append({'cam': cam, 'im': im, 'seg': seg_col, 'id': c})
+        
+        image = copy.deepcopy(Image.open(im_file_path))
+        width, height = image.size
+        resized_image = image.resize((int(width/scale), int(height/scale)))
+        resized_image = np.array(resized_image)
+        resized_image = torch.tensor(resized_image).float().cuda().permute(2, 0, 1) / 255 # torch.from_numpy(np.array(resized_image)) / 255.0
+        # if len(resized_image.shape) == 3:
+        #     resized_image.cuda().permute(2, 0, 1)
+        # else:
+        #     resized_image.cuda().unsqueeze(dim=-1).permute(2, 0, 1)
+        threshold = 128
+
+
+
+        seg = copy.deepcopy(Image.open(seg_file_path))
+     
+
+        resized_seg =  seg.resize((int(width/scale), int(height/scale)))
+
+        resized_seg = np.array(resized_seg)
+        resized_seg[:, :, :] = np.where(resized_seg < threshold, 0, 255)
+  
+        new_img_array = np.zeros((resized_seg.shape[0], resized_seg.shape[1]), dtype=np.uint8)
+
+        # Set pixels to 255 where the original image is white, 0 otherwise
+        new_img_array[np.all(resized_seg == [255, 255, 255], axis=-1)] = 1
+        # new_img_array = np.zeros((resized_image.shape[1], resized_image.shape[2]), dtype=np.uint8)
+    
+        new_img_array = torch.tensor(new_img_array).float().cuda()
+        seg_col = torch.stack((new_img_array, torch.zeros_like(new_img_array), 1 - new_img_array))
+        dataset.append({'cam': cam, 'im': resized_image, 'seg': seg_col, 'id': c})
     return dataset
 
 
@@ -66,7 +109,7 @@ def initialize_params(seq, md):
 
 def initialize_optimizer(params, variables):
     lrs = {
-        'means3D': 0.00016 * variables['scene_radius'],
+        'means3D': 0.00016 * 3.8 ,#variables['scene_radius'],
         'rgb_colors': 0.0025,
         'seg_colors': 0.0,
         'unnorm_rotations': 0.001,
@@ -114,7 +157,7 @@ def get_loss(params, curr_data, variables, is_initial_timestep):
         curr_offset_mag = torch.sqrt((curr_offset ** 2).sum(-1) + 1e-20)
         losses['iso'] = weighted_l2_loss_v1(curr_offset_mag, variables["neighbor_dist"], variables["neighbor_weight"])
 
-        losses['floor'] = torch.clamp(fg_pts[:, 1], min=0).mean()
+        losses['floor'] = torch.clamp(fg_pts[:, 1], max = 2.7).mean()
 
         bg_pts = rendervar['means3D'][~is_fg]
         bg_rot = rendervar['rotations'][~is_fg]
@@ -187,29 +230,55 @@ def report_progress(params, data, i, progress_bar, every_i=100):
         progress_bar.update(every_i)
 
 
-def train(seq, exp):
+def train(seq, exp,  scale=1):
+    
     if os.path.exists(f"./output/{exp}/{seq}"):
         print(f"Experiment '{exp}' for sequence '{seq}' already exists. Exiting.")
         return
+
     md = json.load(open(f"./data/{seq}/train_meta.json", 'r'))  # metadata
     num_timesteps = len(md['fn'])
+
+    save_interval = 10
+    if num_timesteps > save_interval:
+        save_iterations = [ iter  for iter in range(save_interval, num_timesteps) if iter % save_interval == 0]
+    else :
+        save_iterations = []
+
     params, variables = initialize_params(seq, md)
     optimizer = initialize_optimizer(params, variables)
     output_params = []
     for t in range(num_timesteps):
-        dataset = get_dataset(t, md, seq)
+        # if t < 43:
+        #     continue
+        if t  == num_timesteps - 1:
+            iters = [t-1]
+        else:
+            iters = [it for it in range(t+1,t+5) if it < num_timesteps]
+        dataset = get_dataset(t, md, seq, iters, scale=scale)
         todo_dataset = []
         is_initial_timestep = (t == 0)
         if not is_initial_timestep:
             params, variables = initialize_per_timestep(params, variables, optimizer)
-        num_iter_per_timestep = 5000 if is_initial_timestep else 2000
+        num_iter_per_timestep = 10000 if is_initial_timestep else 700
         progress_bar = tqdm(range(num_iter_per_timestep), desc=f"timestep {t}")
         for i in range(num_iter_per_timestep):
             curr_data = get_batch(todo_dataset, dataset)
-            loss, variables = get_loss(params, curr_data, variables, is_initial_timestep)
+            try:
+                loss, variables = get_loss(params, curr_data, variables, is_initial_timestep)
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                print ("Skipping to the next iter!")
+                continue
             loss.backward()
             with torch.no_grad():
-                report_progress(params, dataset[0], i, progress_bar)
+                try:
+                    report_progress(params, dataset[0], i, progress_bar)
+                except Exception as e:
+                    print(f"An error occurred: {e}")
+                    print ("Skipping to the next iter!")
+                    continue   
+
                 if is_initial_timestep:
                     params, variables = densify(params, variables, optimizer, i)
                 optimizer.step()
@@ -218,11 +287,46 @@ def train(seq, exp):
         output_params.append(params2cpu(params, is_initial_timestep))
         if is_initial_timestep:
             variables = initialize_post_first_timestep(params, variables, optimizer)
+
+        if t in save_iterations:
+            save_params(output_params, seq, exp)
+            if not os.path.exists(f'./output/{exp}/{seq}/init_pt_cld.npz'):
+                shutil.copy2(f'./data/{seq}/init_pt_cld.npz', f'./output/{exp}/{seq}/init_pt_cld.npz')
+
+
     save_params(output_params, seq, exp)
+    if not os.path.exists(f'./output/{exp}/{seq}/init_pt_cld.npz'):
+                shutil.copy2(f'./data/{seq}/init_pt_cld.npz', f'./output/{exp}/{seq}/init_pt_cld.npz')
+
 
 
 if __name__ == "__main__":
-    exp_name = "exp2"
-    for sequence in ["juggle"]:
-        train(sequence, exp_name)
+    # exp_name = "exp_only_oguz_2_scl_4_it_500_20cams"
+    # exp_name = "exp_witback_oguz_2_scl_4_it_500_green_test"
+    # exp_name ="oguz_2_only_test3"
+    # exp_name = "yoga_wo_background_onlypt_scale_4_it_500_pose_1_4"
+    # exp_name ="yoga_pose_1_4_only_test2"
+    # exp_name = "yoga_wo_background_onlypt_scale_4_it_500_pose_1_4_2"
+    # exp_name = "yoga_wo_background_onlypt_scale_4_it_500_pose_1_4_all"
+
+    # for sequence in ["10-09-2024_data/pose_1_4_all"]:
+    # exp_name ="oguz_2_calib_scl_2_20_cams_4096x2950_test1"
+    # for sequence in ["oguz_2_calib"]:
+
+    # exp_name ="hamit_2024-12-04_16-58-12_evenly_scl_4_it_600_test1"
+    # for sequence in ["2024-12-04_16-58-12_evenly"]: # ["hamit_3_27-11-2024_calib"]:  #["hamit_3_27-11-2024_withbkgrnd"]:
+
+    # exp_name ="hamit_2024-12-04_17-14-42_scl_2_it_600_test1"
+    # for sequence in ["2024-12-04_17-14-42"]: 
+    
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_scl_2_it_1000_test1"
+    # for sequence in ["2024-12-19_19-12-14_4096_wo_bckgrnd"]:
+
+    # exp_name ="hamit_2024-12-04_17-14-42_withbckgrnd_scl_4_it_600_simplified"
+    # for sequence in ["2024-12-04_17-14-42_withbckgrnd"]: 
+    exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_calib_trans_scl_2_it_700"
+    for sequence in ["2024-12-19_19-12-14_4096_wo_bckgrnd_calib2_trans"]:
+    
+        train(sequence, exp_name, scale=2)
         torch.cuda.empty_cache()
+

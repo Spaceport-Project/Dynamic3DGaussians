@@ -1,0 +1,118 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Prepare and undistort dataset",
+            "type": "debugpy",
+            "request": "launch",
+            // "program": "data_making/generate_data_for_training.py --dataset_path /mnt/Elements2/19-12-2024_Data/2024-12-19_19-12-14_4096/all_frames_10-20 --undistorted_output_folder_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_20-11-26_4096_180/processed_data_0-300/ims_undistorted --camera_yml_file_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-07-50_4096_calib/cameras_calibs_data_51mm_4096.yml --cam_number 24  --num_timesteps_interv 0 300 --mp4s_path /media/hamit/HamitsKingston/19-12-2024_Data/2024-12-19_19-12-14_4096/ --dataset_name  test3 ",
+            // "program": "data_making/generate_data_for_training.py --dataset_path /mnt/Elements2/19-12-2024_Data/2024-12-19_19-12-14_4096/all_frames_300_650_2 --undistorted_output_folder_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-600_calib/ims_undistorted --camera_yml_file_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-07-50_4096_calib/cameras_calibs_data_51mm_4096.yml --cam_number 24 --num_timesteps_interv 300 600 --mp4s_path /media/hamit/HamitsKingston/19-12-2024_Data/2024-12-19_19-12-14_4096 --dataset_name 2024-12-19_19-12-14_4096_wo_bckgrnd_calib_colmap_basedon_calib",
+            "program": "data_making/generate_data_for_training.py --dataset_path /mnt/Elements2/19-12-2024_Data/2024-12-19_19-12-14_4096/all_frames_300_650_2 --undistorted_output_folder_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-600_new_fix_calib/ims_undistorted --camera_yml_file_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-07-50_4096_calib/calibrated_cameras_data_51mm_4096_org_multical.yml --cam_number 24 --num_timesteps_interv 300 600 --mp4s_path /media/hamit/HamitsKingston/19-12-2024_Data/2024-12-19_19-12-14_4096 --dataset_name 2024-12-19_19-12-14_4096_wo_bckgrnd_calib_org_multical",
+
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "Python Dummy",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "dummy_frames_to_gpu_v3.py",
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/gst_env.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Python Appsrc",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "gst_cuda_wrapper/appsrc_python.py",
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/gst_env.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Python Create SFM File: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/create_cameraInitSfm.py --input_sfm_file /home/hamit/Softwares/Dynamic3DGaussians/data/juggle/meshroom_data/sfm.json",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "Python Colmap to data: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "data_making/colmap_to_data.py --colmap_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-600_calib  --dataset_name 2024-12-19_19-12-14_4096_wo_bckgrnd_calib_colmap",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "Python Fix intrinsics and convert Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "data_making/fix_intrinsics_and_convert.py  -s /home/hamit/DATA/oguz_2_22-08-2024/processed_data_calib/colmap_input/ -i /home/hamit/basler_camera_calibrations/calibrations_list/",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "Python Create Data From Meshroom Data: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/create_data_from_meshroominfo.py --input_path /home/hamit/Softwares/Dynamic3DGaussians/data/juggle/",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "Python Convert: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/convert_nz2ply.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Train: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "train_scale_v2_2.py",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}",
+            "justMyCode": false
+        },
+        {
+            "name": "Python Visualize: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "view_in_viser_threads_multiprocess.py",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}",
+            "justMyCode": false
+        },
+        {
+            "name": "Python N3v: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "n3v2blender.py /home/hamit/Softwares/Dynamic3DGaussians/data/10-09-2024_data/pose_1_3",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "Python Data prep: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "data_prep.py  /home/hamit/Softwares/Dynamic3DGaussians/data/10-09-2024_data/pose_1_3/images  /home/hamit/Softwares/Dynamic3DGaussians/data/10-09-2024_data/pose_1_3/transforms.json",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "Python Extract Frames",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "data_making/extract_frames_folder.py  --input_path /media/hamit/HamitsKingston/12-12-2024_Data/2024-12-12_10-29-44/  --output_path /home/hamit/DATA/2024-12-12_10-29-44_4096",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        }
+    ]
+}
