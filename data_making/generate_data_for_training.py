@@ -18,7 +18,7 @@ from pathlib import Path
 from argparse import Namespace  
 
 # import generate_window_masked_data
-import generate_masked_data
+# import generate_masked_data
 
 import xmltodict
 
@@ -561,7 +561,7 @@ def prepare_tuples_for_organize_undistort_by_timestep(list_valid_ts, dataset_pat
     return tuples_for_organize_undistort   
 
 
-def extract_frames_with_pts(cam_file_path, output_path, cam_serial, num_timesteps_interv):
+def extract_frames_with_pts(cam_file_path, cam_prefix, output_path, cam_serial, num_timesteps_interv, ext="png"):
     # Create output directory
     os.makedirs(output_path, exist_ok=True)
 
@@ -579,15 +579,43 @@ def extract_frames_with_pts(cam_file_path, output_path, cam_serial, num_timestep
 
     try:
         # Extract frames using ffmpeg-python with chained operations
+        # (
+        #     ffmpeg
+        #     .input(cam_file_path)
+        #     # .filter('select', f'between(n,{num_timesteps_interv[0]},{num_timesteps_interv[1]})')
+        #     # .filter('select', f'between(n,{num_timesteps_interv[0]},{num_timesteps_interv[1]})* \
+        #     #         not(mod(n-{num_timesteps_interv[0]},5))')
+        #     .filter('select', f'between(n,{num_timesteps_interv[0]},{num_timesteps_interv[1]})') 
+        #     # .filter('select', 'not(mod(n,2))')  
+        #     .output(f'{output_path}/{cam_prefix}_%03d_{cam_serial}.{ext}', **{'q:v': 1},
+        #            vsync='0',
+        #            start_number=0)
+        #     .run(capture_stdout=True, capture_stderr=True)
+        # )
         (
             ffmpeg
-            .input(cam_file_path)
-            .filter('select', f'between(n,{num_timesteps_interv[0]},{num_timesteps_interv[1] + 50})')
-            .output(f'{output_path}/frame_%03d_{cam_serial}.png', 
-                   vsync='0',
-                   start_number=0)
+            .input(cam_file_path, hwaccel='cuda')
+            .filter('select', f'between(n,{num_timesteps_interv[0]},{num_timesteps_interv[1]})')
+            .output(f'{output_path}/{cam_prefix}_%03d_{cam_serial}.{ext}',
+                    **{'q:v': 1},
+                    vsync='0',
+                    start_number=0)
             .run(capture_stdout=True, capture_stderr=True)
         )
+
+        # (
+        #     ffmpeg
+        #     .input(cam_file_path, hwaccel='cuda', hwaccel_output_format='nv12')
+        #     .filter('hwdownload')
+        #     .filter('format', 'nv12')
+        #     .filter('select', f'between(n,{num_timesteps_interv[0]},{num_timesteps_interv[1]})')
+        #     .output(f'{output_path}/{cam_prefix}_%03d_{cam_serial}.{ext}',
+        #             **{'q:v': 1},
+        #             vsync='0',
+        #             start_number=0)
+        #     .run(capture_stdout=True, capture_stderr=True)
+        # )
+        
     except ffmpeg.Error as e:
         print('stdout:', e.stdout.decode('utf8'))
         print('stderr:', e.stderr.decode('utf8'))
@@ -596,35 +624,39 @@ def extract_frames_with_pts(cam_file_path, output_path, cam_serial, num_timestep
     # Rename files with PTS
     for i, frame in enumerate(frames_data, 0):
         pts_time = frame["pkt_pts"]
-        old_name = f'{output_path}/frame_{i:03}_{cam_serial}.png'
-        new_name = f'{output_path}/frame_{pts_time}_{cam_serial}.png'
+        old_name = f'{output_path}/{cam_prefix}_{i:03}_{cam_serial}.{ext}'
+        new_name = f'{output_path}/{cam_prefix}_{pts_time}_{cam_serial}.{ext}'
        
         if os.path.exists(old_name):
             print(old_name, new_name)
             os.rename(old_name, new_name)
+    
 
-def prepare_tuples_for_extract_frames(mp4s_path, dataset_path, num_timesteps_intver):
+def prepare_tuples_for_extract_frames(prefix, mp4s_path, dataset_path, num_timesteps_intver):
     
 
     inputs=[]
-    mp4_files_full = sorted([file for file in os.listdir(mp4s_path) if file.endswith(".mp4") and file.startswith("Cam-Full_")])
+    # mp4_files_full = sorted([file for file in os.listdir(mp4s_path) if file.endswith(".mp4") and file.startswith("Cam-FullSize_")])
     
-    for cam_index, cam_file in enumerate(mp4_files_full):
-        # if cam_index > 2:
-        #     break
-        cam_file_base= os.path.splitext(cam_file)[0]
-        cam_serial = cam_file_base.split('_')[-1]
-        cam_file_path= os.path.join(mp4s_path, cam_file)
-        inputs.append((cam_file_path, dataset_path, cam_serial, num_timesteps_intver))
+    # for cam_index, cam_file in enumerate(mp4_files_full):
+    #     # if cam_index > 2:
+    #     #     break
+    #     cam_file_base= os.path.splitext(cam_file)[0]
+    #     cam_serial = cam_file_base.split('_')[-1]
+    #     cam_prefix = cam_file_base.split('_')[0]
+
+    #     cam_file_path= os.path.join(mp4s_path, cam_file)
+    #     # inputs.append((cam_file_path, cam_prefix, dataset_path, cam_serial, (0,10)))
     
-    mp4_files =  sorted([file for file in os.listdir(mp4s_path) if file.endswith(".mp4") and file.startswith("Cam_")])
+    mp4_files =  sorted([file for file in os.listdir(mp4s_path) if file.endswith(".mp4") and file.startswith(prefix)])
     for cam_index, cam_file in enumerate(mp4_files):
     # if cam_index > 2:
     #     break
         cam_file_base= os.path.splitext(cam_file)[0]
+        cam_prefix = cam_file_base.split('_')[0]
         cam_serial = cam_file_base.split('_')[-1]
         cam_file_path= os.path.join(mp4s_path, cam_file)
-        inputs.append((cam_file_path, dataset_path, cam_serial, num_timesteps_intver))
+        inputs.append((cam_file_path, cam_prefix, dataset_path, cam_serial, num_timesteps_intver))
     
     return inputs
 
@@ -793,39 +825,40 @@ def main():
     parser.add_argument("--undistorted_output_folder_path",  required=True, help="Base directory to save processed images")
     parser.add_argument("--camera_yml_file_path",  required=True , help="Path to the yml file containing camera parameters")
     parser.add_argument("--cam_number", required=True, type=int, help="Number of cameras in the camera rig setup")
-    parser.add_argument("--num_timesteps_interv", nargs=2, default=(300, 600), type=int, help="Number of timesteps to be processed")
+    parser.add_argument("--num_timesteps_interv", nargs=2, default=(0, 10), type=int, help="Number of timesteps to be processed")
     parser.add_argument('--dataset_name', type=str, required=True, help='Dataset name.')
+    parser.add_argument('--prefix_cam',type=str, required=True )
 
     args = parser.parse_args()
     num_timesteps = args.num_timesteps_interv[1] - args.num_timesteps_interv[0]
     
-    # if  args.mp4s_path:
-    #     tuples_for_extract_frames = prepare_tuples_for_extract_frames(args.mp4s_path, args.dataset_path, args.num_timesteps_interv)
+    if  args.mp4s_path:
+        tuples_for_extract_frames = prepare_tuples_for_extract_frames(args.prefix_cam, args.mp4s_path, args.dataset_path, args.num_timesteps_interv)
     
 
-    #     with multiprocessing.Pool(processes=8) as pool_extract_frames:
-    #         results = []  
-    #         for tuple in tuples_for_extract_frames:
-    #             result = pool_extract_frames.apply_async(extract_frames_with_pts, tuple)  
-    #             results.append(result)  
-    #         results = [r.get() for r in results] 
+        with multiprocessing.Pool(processes=18) as pool_extract_frames:
+            results = []  
+            for tuple in tuples_for_extract_frames:
+                result = pool_extract_frames.apply_async(extract_frames_with_pts, tuple)  
+                results.append(result)  
+            results = [r.get() for r in results] 
             
-    #     print("Extract Frames Results:", results)  
+        print("Extract Frames Results:", results)  
 
 
 
-    list_valid_ts, list_serial_number = calculate_number_valid_timesteps(args.dataset_path, args.cam_number, num_timesteps)
-    tuples_for_organize_undistort = prepare_tuples_for_organize_undistort_by_timestep(list_valid_ts, args.dataset_path, args.undistorted_output_folder_path, args.camera_yml_file_path, list_serial_number)
+    # list_valid_ts, list_serial_number = calculate_number_valid_timesteps(args.dataset_path, args.cam_number, num_timesteps)
+    # tuples_for_organize_undistort = prepare_tuples_for_organize_undistort_by_timestep(list_valid_ts, args.dataset_path, args.undistorted_output_folder_path, args.camera_yml_file_path, list_serial_number)
     
-    with multiprocessing.Pool(processes=8) as pool_organize_undistort:
-        results = []  
-        for tuple in tuples_for_organize_undistort:
-            result = pool_organize_undistort.apply_async(organize_and_undistort_by_timestep, tuple)  
-            results.append(result)  
-        results = [r.get() for r in results] 
-    print("Organize and Undistort Results:", results)  
+    # with multiprocessing.Pool(processes=8) as pool_organize_undistort:
+    #     results = []  
+    #     for tuple in tuples_for_organize_undistort:
+    #         result = pool_organize_undistort.apply_async(organize_and_undistort_by_timestep, tuple)  
+    #         results.append(result)  
+    #     results = [r.get() for r in results] 
+    # print("Organize and Undistort Results:", results)  
 
-    k_matrix = deepcopy(results[0])
+    # k_matrix = deepcopy(results[0])
     
 
    
@@ -844,7 +877,7 @@ def main():
     
 
     
-    prepare_final_step(args.undistorted_output_folder_path, args.camera_yml_file_path, args.dataset_name, k_matrix)
+    # prepare_final_step(args.undistorted_output_folder_path, args.camera_yml_file_path, args.dataset_name, k_matrix)
     
     
     

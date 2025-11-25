@@ -9,7 +9,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 from random import randint
 from tqdm import tqdm
 from diff_gaussian_rasterization import GaussianRasterizer as Renderer
-from helpers import setup_camera, l1_loss_v1, l1_loss_v2, weighted_l2_loss_v1, weighted_l2_loss_v2, quat_mult, \
+from helpers_scl import setup_camera, l1_loss_v1, l1_loss_v2, weighted_l2_loss_v1, weighted_l2_loss_v2, quat_mult, \
     o3d_knn, params2rendervar, params2cpu, save_params
 from external import calc_ssim, calc_psnr, build_rotation, densify, update_params_and_optimizer
 import shutil
@@ -86,7 +86,7 @@ def get_batch(todo_dataset, dataset):
 def initialize_params(seq, md):
     init_pt_cld = np.load(f"./data/{seq}/init_pt_cld.npz")["data"]
     seg = init_pt_cld[:, 6]
-    max_cams = 50
+    max_cams = 200
     sq_dist, _ = o3d_knn(init_pt_cld[:, :3], 3)
     mean3_sq_dist = sq_dist.mean(-1).clip(min=0.0000001)
     params = {
@@ -112,12 +112,12 @@ def initialize_params(seq, md):
 
 def initialize_optimizer(params, variables):
     lrs = {
-        'means3D': 0.00016 * 3.8 ,#variables['scene_radius'],
+        'means3D':  0.00016 ,#* 3.8 * 1.2 ,#variables['scene_radius'],
         'rgb_colors': 0.0025,
         'seg_colors': 0.0,
         'unnorm_rotations': 0.001,
-        'logit_opacities': 0.05,
-        'log_scales': 0.001,
+        'logit_opacities': 0.025, #0.05,
+        'log_scales': 0.005, #0.001,
         'cam_m': 1e-4,
         'cam_c': 1e-4,
     }
@@ -242,7 +242,7 @@ def train(seq, exp, scale):
     md = json.load(open(f"./data/{seq}/train_meta.json", 'r'))  # metadata
     num_timesteps = len(md['fn'])
 
-    save_interval = 10
+    save_interval = 3
     if num_timesteps > save_interval:
         save_iterations = [ iter  for iter in range(save_interval, num_timesteps) if iter % save_interval == 0]
     else :
@@ -251,16 +251,19 @@ def train(seq, exp, scale):
     params, variables = initialize_params(seq, md)
     optimizer = initialize_optimizer(params, variables)
     output_params = []
-    for t in range(num_timesteps):
+    ss=0
+    is_initial_timestep = True
+    for t in range(num_timesteps+1):
         # if t < 43:
         #     continue
-        if t  == num_timesteps - 1:
-            iters = [t-1]
+        if ss  == num_timesteps - 1:
+            iters = [ss-1]
         else:
-            iters = [it for it in range(t+1,t+5) if it < num_timesteps]
-        dataset = get_dataset(t, md, seq, iters, scale=scale)
+            iters = [it for it in range(ss+1,ss+5) if it < num_timesteps]
+        if is_initial_timestep:
+            dataset = get_dataset(ss, md, seq, iters, scale=scale)
         todo_dataset = []
-        is_initial_timestep = (t == 0)
+        # is_initial_timestep = (ss == 0)
         if not is_initial_timestep:
             params, variables = initialize_per_timestep(params, variables, optimizer)
         num_iter_per_timestep = 10000 if is_initial_timestep else 1000
@@ -276,7 +279,7 @@ def train(seq, exp, scale):
             loss.backward()
             with torch.no_grad():
                 try:
-                    report_progress(params, dataset[0], i, progress_bar)
+                    report_progress(params, dataset[15], i, progress_bar)
                 except Exception as e:
                     print(f"An error occurred: {e}")
                     print ("Skipping to the next iter!")
@@ -286,11 +289,14 @@ def train(seq, exp, scale):
                     params, variables = densify(params, variables, optimizer, i)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
+
         progress_bar.close()
         output_params.append(params2cpu(params, is_initial_timestep))
         if is_initial_timestep:
             variables = initialize_post_first_timestep(params, variables, optimizer)
+        is_initial_timestep = False
 
+        # ss +=1
         if t in save_iterations:
             save_params(output_params, seq, exp)
             if not os.path.exists(f'./output/{exp}/{seq}/init_pt_cld.npz'):
@@ -298,8 +304,8 @@ def train(seq, exp, scale):
 
 
     save_params(output_params, seq, exp)
-    if not os.path.exists(f'./output/{exp}/{seq}/init_pt_cld.npz'):
-                shutil.copy2(f'./data/{seq}/init_pt_cld.npz', f'./output/{exp}/{seq}/init_pt_cld.npz')
+    # if not os.path.exists(f'./output/{exp}/{seq}/init_pt_cld.npz'):
+    #     shutil.copy2(f'./data/{seq}/init_pt_cld.npz', f'./output/{exp}/{seq}/init_pt_cld.npz')
 
 
 
@@ -325,10 +331,20 @@ if __name__ == "__main__":
     # exp_name = "hamit_2024-12-19_19-12-14_4096_scl_2_it_1200"
     # for sequence in ["2024-12-19_19-12-14_4096"]:
    
-    exp_name = "hamit_2024-12-19_20-11-26_4096_180_scl_2_it_1000"
-    for sequence in ["2024-12-19_20-11-26_4096_180"]:
+    # exp_name = "hamit_2024-12-19_20-11-26_4096_180_scl_2_it_1000"
+    # for sequence in ["2024-12-19_20-11-26_4096_180"]:
+    
+    # exp_name = "bicycle_2_scl_2_test7"        
+    # for sequence in ["bicycle_2"]:
+
+    # exp_name = "2025-03-27_15-42-48_yoga_ai_scl_1_noseg"        
+    # for sequence in ["2025-03-27_15-42-48_yoga_ai_noseg"]:
+    
+    exp_name = "2025-03-27_15-42-48_yoga_ai_stest_cl_1_noseg"        
+    for sequence in ["2025-03-27_15-46-48_yoga_ai_test_noseg"]:
+        
+        
 
 
-        train(sequence, exp_name, scale=2)
+        train(sequence, exp_name, scale=1)
         torch.cuda.empty_cache()
-

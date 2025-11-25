@@ -1,9 +1,15 @@
 __pycache__/
 .idea/
 data/
+data_making/**/*.log
 output/
 gst_cuda_wrapper/
 .py
 encoders/dist
 encoders/build
 encoders/*.so
+*.png  
+*.jpg
+*.ply
+*.pt
+src/

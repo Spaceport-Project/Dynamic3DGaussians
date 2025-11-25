@@ -2,16 +2,56 @@
     // Use IntelliSense to learn about possible attributes.
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+
+
+    // --mp4s_path /media/hamit/DATA/12-11-2025_Data/kickbox/2025-11-12_14-06-52_aliyenur_4 
     "version": "0.2.0",
     "configurations": [
+        {
+            "name": "Python Dynamic GS Data Generetor",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "data_making/generate_data_for_dynamicgs_v2.py --dataset_path /DATA/processed_data/12-11-2025_Data/2025-11-12_14-20-42_ahmet_4_70_1870/all_frames  --output_folder /DATA/processed_data/12-11-2025_Data/2025-11-12_14-20-42_ahmet_4_70_1870 --cam_prefix Cam_ --cam_number 44 --cam_folder ims  --rembg_folder ims_rembg --seg_folder seg_rembg --num_timesteps_interv 70 1870 --mp4s_path /media/hamit/DATA/12-11-2025_Data/kickbox/2025-11-12_14-20-42_ahmet_4", 
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "Python Masking",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "data_making/mask_multi.py --path /media/hamit/Elements/05-02-2025_Data/processed_data/2025-02-05_14-24-53_gain_8/colmap_input_new/input/ --input_folder /media/hamit/Elements/05-02-2025_Data/processed_data/2025-02-05_14-24-53_gain_8/ims_2 --output_folder /media/hamit/Elements/05-02-2025_Data/processed_data/2025-02-05_14-24-53_gain_8/ims_2_masked --output_seg_folder /media/hamit/Elements/05-02-2025_Data/processed_data/2025-02-05_14-24-53_gain_8/seg_2_masked",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "Python segmentation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "data_making/generate_masked_data_yolo11.py images -n yolox-x -c  /home/hamit/Softwares/YOLOX/model_weights/yolox_x.pth --sam_checkpoint /home/hamit/Softwares/YOLOX/model_weights/segment-anything/sam_vit_h_4b8939.pth --sam_model_type vit_h --path  /home/hamit/DATA/processed_data/2025-03-27_15-46-48/ims/0/000000.png --conf 0.25 --nms 0.5 --tsize 640 --save_result --device gpu",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": "${command:pickArgs}",
+            //       "env": {
+            //     "PYTHONPATH": "/home/hamit/Softwares/segment-anything:/home/hamit/Softwares/YOLOX/yolox:/home/hamit/Softwares/YOLOX/"
+            // }  
+        },
+        {
+            "name": "Python SAM2 segmentation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "data_making/generate_masked_data_yolo11_sam2.py images -n yolox-x -c  /home/hamit/Softwares/YOLOX/model_weights/yolox_x.pth --sam_checkpoint /home/hamit/Softwares/YOLOX/model_weights/segment-anything/sam_vit_h_4b8939.pth --sam_model_type vit_h --path  /home/hamit/DATA/processed_data/2025-03-27_15-46-48/colmap_input/input_noseg/ --conf 0.25 --nms 0.5 --tsize 640 --save_result --device gpu",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": "${command:pickArgs}",
+            //       "env": {
+            //     "PYTHONPATH": "/home/hamit/Softwares/segment-anything:/home/hamit/Softwares/YOLOX/yolox:/home/hamit/Softwares/YOLOX/"
+            // }  
+        },
         {
             "name": "Python Prepare and undistort dataset",
             "type": "debugpy",
             "request": "launch",
-            // "program": "data_making/generate_data_for_training.py --dataset_path /mnt/Elements2/19-12-2024_Data/2024-12-19_19-12-14_4096/all_frames_10-20 --undistorted_output_folder_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_20-11-26_4096_180/processed_data_0-300/ims_undistorted --camera_yml_file_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-07-50_4096_calib/cameras_calibs_data_51mm_4096.yml --cam_number 24  --num_timesteps_interv 0 300 --mp4s_path /media/hamit/HamitsKingston/19-12-2024_Data/2024-12-19_19-12-14_4096/ --dataset_name  test3 ",
-            // "program": "data_making/generate_data_for_training.py --dataset_path /mnt/Elements2/19-12-2024_Data/2024-12-19_19-12-14_4096/all_frames_300_650_2 --undistorted_output_folder_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-600_calib/ims_undistorted --camera_yml_file_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-07-50_4096_calib/cameras_calibs_data_51mm_4096.yml --cam_number 24 --num_timesteps_interv 300 600 --mp4s_path /media/hamit/HamitsKingston/19-12-2024_Data/2024-12-19_19-12-14_4096 --dataset_name 2024-12-19_19-12-14_4096_wo_bckgrnd_calib_colmap_basedon_calib",
-            "program": "data_making/generate_data_for_training.py --dataset_path /mnt/Elements2/19-12-2024_Data/2024-12-19_19-12-14_4096/all_frames_300_650_2 --undistorted_output_folder_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-600_new_fix_calib/ims_undistorted --camera_yml_file_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-07-50_4096_calib/calibrated_cameras_data_51mm_4096_org_multical.yml --cam_number 24 --num_timesteps_interv 300 600 --mp4s_path /media/hamit/HamitsKingston/19-12-2024_Data/2024-12-19_19-12-14_4096 --dataset_name 2024-12-19_19-12-14_4096_wo_bckgrnd_calib_org_multical",
-
+            "program": "data_making/generate_data_for_training.py --dataset_path  /home/hamit/DATA/processed_data/12-11-2005_Data/2025-11-12_14-06-52_aliyenur_4/all_frames --undistorted_output_folder_path /media/hamit/Elements/05-02-2025_Data/processed_data/2025-02-05_14-24-53_gain_8/ims_undistorted --camera_yml_file_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-07-50_4096_calib/calibrated_cameras_data_51mm_4096_org_multical.yml --cam_number 44  --num_timesteps_interv 50 350  --mp4s_path /media/hamit/DATA/12-11-2025_Data/kickbox/2025-11-12_14-06-52_aliyenur_4  --prefix_cam Cam_ --dataset_name  test3",
             "console": "integratedTerminal",
             "args": "${command:pickArgs}"
         },
@@ -45,7 +85,7 @@
             "name": "Python Colmap to data: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
-            "program": "data_making/colmap_to_data.py --colmap_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-600_calib  --dataset_name 2024-12-19_19-12-14_4096_wo_bckgrnd_calib_colmap",
+            "program": "data_making/colmap_to_data.py --input_path  /DATA/processed_data/12-11-2025_Data/2025-11-12_14-20-42_ahmet_4_70_1870   --dataset_name 2025-11-12_14-20-42_ahmet_4_70_1870",
             "console": "integratedTerminal",
             "args": "${command:pickArgs}"
         },
@@ -69,14 +109,15 @@
             "name": "Python Convert: Current File",
             "type": "debugpy",
             "request": "launch",
-            "program": "scripts/convert_nz2ply.py",
+            "program": "data_making/convert_nz2ply.py",
             "console": "integratedTerminal"
         },
         {
             "name": "Python Train: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
-            "program": "train_scale_v2_2.py",
+            "program": "train_scale_ssim_dev_multisave_2.py",
+            "envFile": "${workspaceFolder}/gst_env.env",
             "console": "integratedTerminal",
             "args": "${command:pickArgs}",
             "justMyCode": false

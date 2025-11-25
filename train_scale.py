@@ -241,7 +241,7 @@ def train(seq, exp, scale=1):
     md = json.load(open(f"./data/{seq}/train_meta.json", 'r'))  # metadata
     num_timesteps = len(md['fn'])
 
-    save_interval = 10
+    save_interval = 3
     if num_timesteps > save_interval:
         save_iterations = [ iter  for iter in range(save_interval, num_timesteps) if iter % save_interval == 0]
     else :
@@ -359,9 +359,16 @@ if __name__ == "__main__":
     # exp_name = "hamit_2024-12-19_20-11-26_4096_new_fix_multical_scl_2_it_700"    
     # for sequence in ["2024-12-19_19-12-14_4096_wo_bckgrnd_calib_new_fix_multical"]:
 
-    exp_name = "hamit_2024-12-19_20-11-26_4096_org_multical_scl_2_it_700"    
-    for sequence in ["2024-12-19_19-12-14_4096_wo_bckgrnd_calib_org_multical"]:
+    # exp_name = "hamit_2024-12-19_20-11-26_4096_org_multical_scl_2_it_700"    
+    # for sequence in ["2024-12-19_19-12-14_4096_wo_bckgrnd_calib_org_multical"]:
+    
+    # exp_name = "2025-02-05_14-06-52_gain_9_scl_1_it_700_2"        
+    # for sequence in ["2025-02-05_14-06-52_gain_9"]:
 
-        train(sequence, exp_name, scale=2)
+    exp_name = "2025-02-05_14-16-46_gain_9_scl_1_it_700_2"        
+    for sequence in ["2025-02-05_14-16-46_gain_9"]:
+
+
+        train(sequence, exp_name, scale=1)
         torch.cuda.empty_cache()
 

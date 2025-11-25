@@ -300,14 +300,16 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics):
     return cam_infos
 
 
-def get_extrinsics_matrix( extr, intr):
+def get_extrinsics_matrix( extr, intr, path):
     # Get info about all the cameras
     cams = readColmapCameras(extr, intr)
-
+    # print(extr)
     extr_matrices = []
     # cams are already ordered by image id, e.g. images/0/render.png, images/1/render.png
     # file = open("camera_poses.txt","w")
-    for cam in cams:
+    file = open(f'{path}/img_ref.txt', 'w') 
+
+    for ii, cam in enumerate(cams):
         # Convert to 4x4 matrix
         Rt = np.eye(4)
         # R =  cam.R
@@ -318,10 +320,29 @@ def get_extrinsics_matrix( extr, intr):
         # Rt[:3, 3] = T
         Rt[:3, :3] = cam.R #.transpose()
         Rt[:3, 3] = cam.T
+        theta = np.radians(180)  
+
+     
+        rot = np.array([
+        [np.cos(theta), -np.sin(theta), 0],
+        [np.sin(theta),  np.cos(theta), 0],
+        [0,          0,         1]
+        ])
+        inv_mat = np.linalg.inv(Rt)
+       
+        rotated = rot @ inv_mat[:3,3]
+        rotated[1] += 1.5
+        rotated*=1.44
+        file.write(f'{cam.image_path} ' + ' '.join(str(x) for x in rotated) + '\n')  
+        if ii == 23 or ii == 36 or ii == 37 or ii == 34 or ii == 28:
+            trans_41 = np.array([-0.47686784, -0.63372978, 0.7917734])
+            # inv_mat[:3,3] -= trans_41
+            rotated = rot @ inv_mat[:3,3]
+            print(cam.image_path, rotated, inv_mat[:3,3], repr(inv_mat))
         # np.savetxt(file, Rt)
         # w2c = np.linalg.inv(Rt)
         extr_matrices.append(Rt.tolist())
-    # file.close()
+    file.close()
     return extr_matrices
 
 def all_items_same(lst):
@@ -331,15 +352,15 @@ def all_items_same(lst):
   first_item = lst[0]
   return all(item == first_item for item in lst)
 
-def reorganize_folder_for_missing(ims_folder, number_timestamps):
-    
+def reorganize_folder_for_missing(ims_folder, seg_folder, number_timestamps):
     folders = [folder for folder in sorted(os.listdir(ims_folder)) if os.path.isdir(os.path.join(ims_folder, folder))]
     for folder in folders:
         idx=0
         for ts in range(number_timestamps):
-            iters = [id for id in range(ts+1, ts+6)]
+            iters = [id for id in range(ts+1, ts+20)]
             file = f"{ts:06d}.png"
-            if not os.path.exists(os.path.join(ims_folder,folder,file)):
+            
+            if (not os.path.exists(os.path.join(ims_folder,folder,file))) or (not os.path.exists(os.path.join(seg_folder,folder,file))):
                 print(f"{os.path.join(ims_folder,folder, file)} is missing, trying to find the possible image from next timestamps")
                 if ts == number_timestamps - 1:
                     file_prev =  f"{ts-1:06d}.png"
@@ -347,31 +368,33 @@ def reorganize_folder_for_missing(ims_folder, number_timestamps):
                     im_file_path = os.path.join(ims_folder,folder, file)
                     shutil.copy2(im_file_prev_path, im_file_path)
                     two_up_folder=os.path.basename(os.path.dirname(os.path.dirname(im_file_prev_path)))
-                    seg_file_prev_path = im_file_prev_path.replace(f"/{two_up_folder}/","/seg/")
-                    seg_file_path = im_file_path.replace(f"/{two_up_folder}/","/seg/")
-                    # shutil.copy2(seg_file_prev_path, seg_file_path)
+                    seg_file_prev_path = im_file_prev_path.replace(two_up_folder,os.path.basename(seg_folder))
+                    seg_file_path = im_file_path.replace(two_up_folder,os.path.basename(seg_folder))
+                    shutil.copy2(seg_file_prev_path, seg_file_path)
                     continue
 
                 it = iter(iters)
                 while True:
                     item = next(it, None)
+                    if item is None:
+                        break
                     next_file = f"{item:06d}.png"
                     next_im_file_path = os.path.join(ims_folder,folder,next_file)
                     
                     if os.path.exists(next_im_file_path):
                         two_up_folder=os.path.basename(os.path.dirname(os.path.dirname(next_im_file_path)))
-                        next_seg_file_path = next_im_file_path.replace(f"/{two_up_folder}/","/seg/")
+                        next_seg_file_path = next_im_file_path.replace(two_up_folder,os.path.basename(seg_folder))
                         im_file_path =  os.path.join(ims_folder,folder,file)
-                        seg_file_path = im_file_path.replace(f"/{two_up_folder}/","/seg/")
+                        seg_file_path = im_file_path.replace(two_up_folder,os.path.basename(seg_folder))
                         shutil.copy2(next_im_file_path, im_file_path)
-                        # shutil.copy2(next_seg_file_path, seg_file_path)
+                        shutil.copy2(next_seg_file_path, seg_file_path)
                         break
                     if item is None:
                         print("No succesive image found in 5 next timestamps")
                         return
 
 
-def get_cam_images(extr, ims_folder, k, w2c):
+def get_cam_images(extr, ims_folder, seg_folder_name, k, w2c):
     """Get image path as <cam_id>/<img_file> and cam ids as list"""
     img_idxs = list(extr.keys())
     images = []
@@ -383,35 +406,49 @@ def get_cam_images(extr, ims_folder, k, w2c):
     cam_ims_folders = sorted(cam_ims_folders, key=lambda x: x[1], reverse=True)
 
     last_file = sorted(os.listdir(os.path.join(ims_folder, cam_ims_folders[0][0])))[-1]
-    number_timestamp = int(os.path.splitext(last_file)[0])
+    number_timestamp = int(os.path.splitext(last_file)[0]) + 1
+    number_timestamp = 1800
+    seg_folder = os.path.join(os.path.dirname(ims_folder), seg_folder_name)
+    # reorganize_folder_for_missing(ims_folder, seg_folder, number_timestamp )
 
-    reorganize_folder_for_missing(ims_folder, number_timestamp + 1)
+    
 
-    seg_folder = os.path.join(os.path.dirname(ims_folder),"seg")
-
-    cam_ims_folders = [(folder, len([ file for file in os.listdir(os.path.join(ims_folder,folder)) if file.endswith('.png')])) for folder in os.listdir(ims_folder) if os.path.isdir(os.path.join(ims_folder, folder)) ]
+    # cam_ims_folders = [(folder, len([ file for file in os.listdir(os.path.join(ims_folder,folder)) if file.endswith('.png')])) for folder in os.listdir(ims_folder) if os.path.isdir(os.path.join(ims_folder, folder)) ]
     # cam_seg_folders = [(folder, len([ file for file in os.listdir(os.path.join(seg_folder,folder)) if file.endswith('.png')])) for folder in os.listdir(seg_folder) if os.path.isdir(os.path.join(seg_folder, folder)) ]
 
+    cam_ims_folders = [(folder, number_timestamp) for folder in os.listdir(ims_folder) if os.path.isdir(os.path.join(ims_folder, folder)) ]
+    cam_seg_folders = [(folder, number_timestamp) for folder in os.listdir(seg_folder) if os.path.isdir(os.path.join(seg_folder, folder)) ]
+
+
+
     lens_cam_ims_folders = [it[1] for it in cam_ims_folders]
-    # lens_cam_seg_folders  = [it[1] for it in cam_seg_folders]
-    assert all_items_same(lens_cam_ims_folders), "Some folders in image folder have different number of image files"
+    lens_cam_seg_folders  = [it[1] for it in cam_seg_folders]
+
+    # assert all_items_same(lens_cam_ims_folders), "Some folders in image folder have different number of image files"
     # assert all_items_same(lens_cam_seg_folders), "Some folders in segmentation folder  have different number of image files"
 
+    # indices_to_add = [16, 27, 3, 40, 25, 4, 42, 21, 32, 35]
+    # k = [x for i, x in enumerate(k) if i  in indices_to_add]
+    # w2c = [x for i, x in enumerate(w2c) if i  in indices_to_add]
+
     indices_to_remove = []
+    # indices_to_remove = [9, 26, 3, 10, 40, 2, 34, 28, 39,  13, 36, 37, 42, 21, 6, 32, 11, 1, 24]
+
     k = [x for i, x in enumerate(k) if i not in indices_to_remove]
     w2c = [x for i, x in enumerate(w2c) if i not in indices_to_remove]
 
-
-    for file in sorted(os.listdir(os.path.join(ims_folder,cam_ims_folders[0][0]))):
+    for ii in range(number_timestamp):
+    # for file in sorted(os.listdir(os.path.join(ims_folder,cam_ims_folders[0][0]))):
         image_list = []
         cam_list = []
         for idx in img_idxs:
             
             id = extr[idx].name.split(".")[0]
-            if int(id) in indices_to_remove:
+            id = int(id)
+            if id  in indices_to_remove:
                 continue
-            image_list.append(f"{id}/{file}")
-            cam_list.append(int(id))
+            image_list.append(f"{id}/{ii:06d}.png")
+            cam_list.append(id)
         images.append(image_list)
         cam_ids.append(cam_list)
         k_all.append(k)

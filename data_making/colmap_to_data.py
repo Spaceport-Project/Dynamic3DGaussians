@@ -9,7 +9,7 @@ import numpy as np
 from utils import utils_colmap
 import json
 from PIL import Image as PIL_Image
-from utils import utils_data_making
+# from utils import utils_data_making
 from collections import OrderedDict
 
 DIM=(4220,3060)
@@ -74,13 +74,15 @@ def main(args):
     print('Converting COLMAP data to Dynamic 3D Gaussians data...')
 
     # Copy images from COLMAP folder to data. Images need to be .JPEG.
-    ims_folder = os.path.join(args.colmap_path, 'ims_black')
-
+    ims_folder = os.path.join(args.input_path, 'ims_rembg')
+    seg_folder_name = "seg_rembg"
+    sub_folder = 'sparse'
+    colmap_input = 'colmap_input'
     
     # Generate init_pt_cld.npz: shape (N, 7) where N is the number of points
-    pt_cld_path = os.path.join(args.colmap_path, 'sparse', '0', 'points3D.bin')
+    pt_cld_path = os.path.join(args.input_path,  colmap_input, sub_folder, 'points3D.bin')
     xyzs, rgbs, _ = utils_colmap.read_points3D_binary(pt_cld_path)
-    # seg = np.ones_like(xyzs[:, 0])[:, None]   # Always static for now, segmentation always 1
+    # seg = np.ones_like(xyzs[:, 0])[:, None]   # Always static for now,     segmentation always 1
     seg = np.ones_like(xyzs[:, 0])[:, None]   # Always static for now, segmentation always 1
 
     # for k,pos in enumerate(xyzs):
@@ -108,25 +110,25 @@ def main(args):
 
     # Get intrinsics and extrinsics values from COLMAP
     data = dict()
-    extrinsics_path = os.path.join(args.colmap_path, 'sparse', '0', 'images.bin')
-    intrinsics_path = os.path.join(args.colmap_path, 'sparse', '0', 'cameras.bin')
-    # intrinsics_path = os.path.join(args.colmap_path, 'sparse', '0', 'cameras.txt')
+    extrinsics_path = os.path.join(args.input_path, colmap_input, sub_folder, 'images.bin')
+    
+    # intrinsics_path = os.path.join(args.input_path, colmap_input, sub_folder, 'cameras_corrected.txt')
+    intrinsics_path = os.path.join(args.input_path, colmap_input, sub_folder,  'cameras.bin')
+
 
     extr = utils_colmap.read_extrinsics_binary(extrinsics_path)  # w2c
+    # for a in extr.items():
+    #     print(a)
     sorted_extr = dict(sorted(extr.items(), key=lambda x:  int(x[1].name.split(".")[0])))
+    # sorted_extr1 = dict(sorted(extr.items(), key=lambda x:  x["name"]))
+
     keys_sorted_extr = list(sorted_extr.keys())
     intr = utils_colmap.read_intrinsics_binary(intrinsics_path)
     # intr = utils_colmap.read_intrinsics_text(intrinsics_path)
-    # sorted_intr = dict(sorted(intr.items(), key=lambda x:  int(x[1].name.split(".")[0])))
+   
     sorted_intr = OrderedDict((key, intr[key]) for key in keys_sorted_extr if key in intr)
     
-    # for key in list(sorted_intr.keys()):
-    #     val = sorted_intr[key]
-
-    #     scale_x = val.width/DIM[0]
-    #     scale_y = val.height/DIM[1]
-    #     params =  (val.params[0]/scale_x, val.params[1]/scale_y, val.params[2]/scale_x, val.params[3]/scale_y)
-    #     sorted_intr[key] = sorted_intr[key]._replace(width= DIM[0], height= DIM[1], params = params)
+   
 
 
     data['w'] = sorted_intr[1].width
@@ -136,17 +138,16 @@ def main(args):
 
     # Generate intrinsics (N, 3, 3) where N is the number of unique cameras
     k = utils_colmap.get_intrinsics_matrix(sorted_extr, sorted_intr) 
-    # data['k'] = [k] # Add dimension as I only have 1 timestamp for now 
     print('Intrinsics matrix calculated')
 
     # Generate extrinsics (N, 4, 4) where N is the number of unique cameras
     
-    w2c = utils_colmap.get_extrinsics_matrix( sorted_extr, sorted_intr) 
-    # data['w2c'] = [w2c] # Add dimension as I only have 1 timestamp for now   
+    w2c = utils_colmap.get_extrinsics_matrix( sorted_extr, sorted_intr, args.input_path) 
     print('Extrinsics matrix calculated')
+    # return
 
     # Get images
-    fn_all, cam_id_all, k_all, w2c_all = utils_colmap.get_cam_images(sorted_extr, ims_folder,  k, w2c)
+    fn_all, cam_id_all, k_all, w2c_all = utils_colmap.get_cam_images(sorted_extr, ims_folder, seg_folder_name, k, w2c)
     data['k'] = k_all
     data['w2c'] = w2c_all
     data['fn'] = fn_all # Add dimension as I only have 1 timestamp for now 
@@ -159,7 +160,7 @@ def main(args):
 
 if __name__=='__main__':
     args = argparse.ArgumentParser()
-    args.add_argument('--colmap_path', type=str, default='', help='Path to the COLMAP data.')
+    args.add_argument('--input_path', type=str, default='', help='Path to the input data.')
     args.add_argument('--output_path', type=str, default='data/', help='Path to the output data.')
     args.add_argument('--dataset_name', type=str, default='', help='Dataset name.')
 

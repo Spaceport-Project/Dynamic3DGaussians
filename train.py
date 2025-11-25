@@ -20,13 +20,35 @@ def get_dataset(t, md, seq):
         fn = md['fn'][t][c]
         im = np.array(copy.deepcopy(Image.open(f"./data/{seq}/ims/{fn}")))
         im = torch.tensor(im).float().cuda().permute(2, 0, 1) / 255
-        seg = np.array(copy.deepcopy(Image.open(f"./data/{seq}/seg/{fn.replace('.jpg', '.png')}"))).astype(np.float32)
+        # seg = np.array(copy.deepcopy(Image.open(f"./data/{seq}/seg/{fn.replace('.jpg', '.png')}"))).astype(np.float32)
+        seg_file_path = f"./data/{seq}/seg/{fn}"
+
+        seg = copy.deepcopy(Image.open(seg_file_path))
+        seg = np.array(seg)
+
+
+        # resized_seg =  seg.resize((int(width/scale), int(height/scale)))
+
+        # resized_seg = np.array(resized_seg)
+        threshold = 128
+
+        seg[:, :, :] = np.where(seg < threshold, 0, 255)
+  
+        new_img_array = np.zeros((seg.shape[0], seg.shape[1]), dtype=np.uint8)
+
+        # Set pixels to 255 where the original image is white, 0 otherwise
+        new_img_array[np.all(seg == [255, 255, 255], axis=-1)] = 1
+        # new_img_array = np.zeros((resized_image.shape[1], resized_image.shape[2]), dtype=np.uint8)
+    
+        new_img_array = torch.tensor(new_img_array).float().cuda()
+        seg_col = torch.stack((new_img_array, torch.zeros_like(new_img_array), 1 - new_img_array))
+        dataset.append({'cam': cam, 'im': im, 'seg': seg_col, 'id': c})
         # res= np.where(seg > 0)
         # result = seg[res]
 
-        seg = torch.tensor(seg).float().cuda()
-        seg_col = torch.stack((seg, torch.zeros_like(seg), 1 - seg))
-        dataset.append({'cam': cam, 'im': im, 'seg': seg_col, 'id': c})
+        # seg = torch.tensor(seg).float().cuda()
+        # seg_col = torch.stack((seg, torch.zeros_like(seg), 1 - seg))
+        # dataset.append({'cam': cam, 'im': im, 'seg': seg_col, 'id': c})
     return dataset
 
 
@@ -114,7 +136,7 @@ def get_loss(params, curr_data, variables, is_initial_timestep):
         curr_offset_mag = torch.sqrt((curr_offset ** 2).sum(-1) + 1e-20)
         losses['iso'] = weighted_l2_loss_v1(curr_offset_mag, variables["neighbor_dist"], variables["neighbor_weight"])
 
-        losses['floor'] = torch.clamp(fg_pts[:, 1], min=0).mean()
+        # losses['floor'] = torch.clamp(fg_pts[:, 1], min=0).mean()
 
         bg_pts = rendervar['means3D'][~is_fg]
         bg_rot = rendervar['rotations'][~is_fg]
@@ -196,13 +218,18 @@ def train(seq, exp):
     params, variables = initialize_params(seq, md)
     optimizer = initialize_optimizer(params, variables)
     output_params = []
+    save_interval = 3
+    if num_timesteps > save_interval:
+        save_iterations = [ iter  for iter in range(save_interval, num_timesteps) if iter % save_interval == 0]
+    else :
+        save_iterations = []
     for t in range(num_timesteps):
         dataset = get_dataset(t, md, seq)
         todo_dataset = []
         is_initial_timestep = (t == 0)
         if not is_initial_timestep:
             params, variables = initialize_per_timestep(params, variables, optimizer)
-        num_iter_per_timestep = 5000 if is_initial_timestep else 2000
+        num_iter_per_timestep = 10000 if is_initial_timestep else 2000
         progress_bar = tqdm(range(num_iter_per_timestep), desc=f"timestep {t}")
         for i in range(num_iter_per_timestep):
             curr_data = get_batch(todo_dataset, dataset)
@@ -216,13 +243,20 @@ def train(seq, exp):
                 optimizer.zero_grad(set_to_none=True)
         progress_bar.close()
         output_params.append(params2cpu(params, is_initial_timestep))
+        if t in save_iterations:
+            save_params(output_params, seq, exp)
         if is_initial_timestep:
             variables = initialize_post_first_timestep(params, variables, optimizer)
     save_params(output_params, seq, exp)
 
 
 if __name__ == "__main__":
-    exp_name = "exp2"
-    for sequence in ["juggle"]:
+    # exp_name = "exp2"
+    # for sequence in ["juggle"]:
+    # exp_name = "2025-03-27_15-46-48_yoga_ai_new_scl_1_train"        
+    # for sequence in ["2025-03-27_15-46-48_yoga_ai_new"]:
+    exp_name = "2025-08-06_16-41-05_3412x2500_1_28sc-10-60_test1"    
+    for sequence in ["2025-08-06_16-41-05_3412x2500_1_28sc-10-60"]:
+    
         train(sequence, exp_name)
         torch.cuda.empty_cache()
