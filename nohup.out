@@ -1,0 +1,4 @@
+  File "/home/hamit/Softwares/Dynamic3DGaussians/3d_video_player_background_multiprocess_360_yoga_2025-08_demo_2_plane.py", line 423
+    if pc_path is None
+                      ^
+SyntaxError: expected ':'

@@ -52,7 +52,7 @@ class Viewer():
         self.seq = seq
         self.exp = exp
         self.viser_server = viser.ViserServer(port=8082)
-        self.viser_server.scene.world_axes.visible = True
+        self.viser_server.scene.world_axes.visible = False
         self.clients_num = 0
         self.k = np.array([[f_ratio * w, 0, w / 2], [0, f_ratio * w, h / 2], [0, 0, 1]])
         self.w = w
@@ -156,7 +156,7 @@ class Viewer():
 
     def start_viewer(self):
         while True:
-            print("Total numer of clients connected:", len(self.render_viewers))
+            print("Total number of clients connected:", len(self.render_viewers))
             time.sleep(1)
     def signal_handler(self,sig, frame):
 

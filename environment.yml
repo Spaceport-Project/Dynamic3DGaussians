@@ -4,14 +4,14 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.8
+  - python=3.10
   - cuda-toolkit
   - pip
   - pip:
     - pillow
     - open3d
     - pydub
-    - numpy
+    - numpy==1.26.4
     - scipy
     - tqdm
     - pycairo

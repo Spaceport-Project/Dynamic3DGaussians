@@ -44,13 +44,12 @@ if not args.skip_matching:
         --image_path " + args.source_path + "/input  \
         --ImageReader.single_camera 1 \
         --ImageReader.camera_model " + args.camera + " \
-        --ImageReader.mask_path " + args.mask_path + " \
         --SiftExtraction.estimate_affine_shape true \
         --SiftExtraction.domain_size_pooling true \
         --SiftExtraction.num_threads 16 \
         --SiftExtraction.use_gpu " + str(use_gpu) + " \
-        --SiftExtraction.max_image_size 30000  \
-        --SiftExtraction.max_num_features 120000 "
+        --SiftExtraction.max_image_size 10000  \
+        --SiftExtraction.max_num_features 40000 "
         
     exit_code = os.system(feat_extracton_cmd)
     if exit_code != 0:
@@ -60,10 +59,9 @@ if not args.skip_matching:
     
 
     ## Feature matching
-    feat_matching_cmd = colmap_command + " exhaustive_matcher \
+    feat_matching_cmd = colmap_command + " sequential_matcher \
         --database_path " + args.source_path + "/distorted/database.db \
-        --SiftMatching.max_num_matches 100000 \
-        --SiftMatching.guided_matching true \
+        --SiftMatching.max_num_matches 40000 \
         --SiftMatching.use_gpu " + str(use_gpu)
     exit_code = os.system(feat_matching_cmd)
     if exit_code != 0:
@@ -115,14 +113,16 @@ for file in files:
 path_match_cmd = (colmap_command + " patch_match_stereo   \
                   --workspace_format COLMAP \
             --workspace_path "  + os.path.join(args.source_path) )
-# exit_code = os.system(path_match_cmd)
-# print("path matching done!")
+exit_code = os.system(path_match_cmd)
+print("path matching done!")
 stereo_fusion_command = (colmap_command + " stereo_fusion \
                          --workspace_format COLMAP \
                           --input_type geometric \
             --workspace_path " + os.path.join(args.source_path) + " \
             --output_path " + os.path.join(args.source_path, 'points3d.ply') )
-exit_code = os.system("nohup bash  -c '(" + path_match_cmd + "; " + stereo_fusion_command + ")' > output.log 2>&1 &")
+exit_code = os.system(stereo_fusion_command)
+
+# exit_code = os.system("nohup bash  -c '(" + path_match_cmd + "; " + stereo_fusion_command + ")' > output.log 2>&1 &")
 print("path matching and stereo fusion done!")
 
 if(args.resize):

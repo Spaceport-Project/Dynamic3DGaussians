@@ -22,7 +22,6 @@ from viser import transforms as tf
 import imageio.v3 as iio
 import signal
 from encoders import jpeg_encoder
-
 import ctypes
 from ctypes import string_at
 from ctypes import *
@@ -76,7 +75,7 @@ class Viewer():
     def __init__(self, seq, exp, f_ratio=0.8, w=1920, h=1080, near=0.01, far=100.0):
         self.seq = seq
         self.exp = exp
-        self.viser_server = viser.ViserServer(port=8080)
+        self.viser_server = viser.ViserServer(port=8084)
         self.viser_server.scene.world_axes.visible = False
         self.clients_num = 0
         self.k = np.array([[f_ratio * w, 0, w / 2], [0, f_ratio * w, h / 2], [0, 0, 1]])
@@ -84,11 +83,13 @@ class Viewer():
         self.h = h
         self.near = near
         self.far = far
-        self.scene_data, _ = self._load_scene_data2(self.seq, self.exp, seg_as_col=False)
+        self.scene_data, _ , self.look_at = self._load_scene_data3(self.seq, self.exp, seg_as_col=False)
+
         self.render_viewers: Dict[int, RenderViewers] = {}
         signal.signal(signal.SIGINT, self.signal_handler)
         self.viser_server.on_client_connect(self.handle_new_client)
         self.viser_server.on_client_disconnect(self.handle_disconnect_client)
+        self.running = True
 
         
 
@@ -113,16 +114,23 @@ class Viewer():
             
         self.clients_num +=1 
         # Show the client ID in the GUI.
-        gui_info = client.gui.add_text("Client ID", initial_value=str(client.client_id))
-        gui_info.disabled = False
-        print(client.client_id)
+        # gui_info = client.gui.add_text("Client ID", initial_value=str(client.client_id))
+        # gui_info.disabled = False
+        print("new client!", client.client_id)
+        print("Total number of clients connected to demo:", len(self.render_viewers))
+
         self.render_viewers[client.client_id] = RenderViewers(self, client)
         self.render_viewers[client.client_id].start()
 
     # def load_model_and_start_viewer(self):
     #     self.scene_data, _ = self.load_scene_data2(self.seq, self.exp, seg_as_col=False)
 
-    
+    def _load_params_data(self, seq, exp):
+        
+        params = dict(np.load(f"./output/{exp}/{seq}/params.npz"))
+            
+        params = {k: torch.tensor(v).float() for k, v in params.items()}
+        return params
    
 
     def _load_scene_data(self, params, low_upper_limit, seg_as_col=False):
@@ -157,7 +165,8 @@ class Viewer():
         params = {k: torch.tensor(v).cuda().float() for k, v in params.items()}
         is_fg = params['seg_colors'][:, 0] > 0.5
         scene_data = []
-        for t in range(min(len(params['means3D']), 500)):
+        length= len(params['means3D'])
+        for t in range(length):
             rendervar = {
                 'means3D': params['means3D'][t],
                 'colors_precomp': params['rgb_colors'][t] if not seg_as_col else params['seg_colors'],
@@ -172,17 +181,70 @@ class Viewer():
         if REMOVE_BACKGROUND:
             is_fg = is_fg[is_fg]
         return scene_data, is_fg
+    
+    def _load_scene_data3(self, seq, exp, seg_as_col=False):
+        params_file =[ os.path.join(f"./output/{exp}/{seq}/", file) for file in  os.listdir(f"./output/{exp}/{seq}/") if file.startswith("params")]
+        params_file = sorted(params_file, key= lambda x : int(os.path.basename(x).split("_")[1].split(".")[0]) if len(os.path.basename(x).split("_")) > 1 else os.path.basename(x).split("_")[0].split(".")[0]) 
+        pc = np.load(os.path.join(f"./output/{exp}/{seq}/", "init_pt_cld.npz"))
+
+        xyz = [vert[:3] for vert in pc['data']]
+        xyz = np.asarray(xyz)
+        center = np.mean(xyz[:], axis=0)
+        print("Foreground center:",center)
+        # print(params_file)
+        scene_data = []
+        total = 0
+        for l, param_file  in enumerate(params_file):
+            # if l < 27:
+            #     continue
+            if  l == 99999:
+                continue
+            params = dict(np.load(param_file))  
+            print(f"{param_file} loaded!")
+
+            params = {k: torch.tensor(v).cuda().float() for k, v in params.items()}
+            is_fg = params['seg_colors'][:, 0] > 0.5
+            # if l == 69:
+            #     length=80
+            # elif l ==75:
+            #     length = 5
+            # else:
+            length = len(params['means3D'])
+            total = total + length
+            print(f"total timesteps:", total, l)
+            for t in range(length): #len(params['means3D'])):
+                rendervar = {
+                    'means3D': params['means3D'][t],
+                    'colors_precomp': params['rgb_colors'][t] if not seg_as_col else params['seg_colors'],
+                    'rotations': torch.nn.functional.normalize(params['unnorm_rotations'][t]),
+                    'opacities': torch.sigmoid(params['logit_opacities']),
+                    'scales': torch.exp(params['log_scales']),
+                    'means2D': torch.zeros_like(params['means3D'][0], device="cuda")
+                }
+                if REMOVE_BACKGROUND:
+                    rendervar = {k: v[is_fg] for k, v in rendervar.items()}
+                scene_data.append(rendervar)
+            if REMOVE_BACKGROUND:
+                is_fg = is_fg[is_fg]
+        return scene_data, is_fg, center
+
+
 
     def start_viewer(self):
         while True:
-            print("Total numer of clients connected:", len(self.render_viewers))
-            time.sleep(1)
+            if not self.running:
+                # time.sleep(1)
+                break
+            print("Total number of clients connected:", len(self.render_viewers))
+            time.sleep(20)
     def signal_handler(self,sig, frame):
 
         print('You pressed Ctrl+C!')
 
+        self.running = False
+
         for key, val in self.render_viewers.items():
-            val.running = False
+            val.running = self.running
             # val.ready = False
             # val.condition.notify_all()
             val.thread_cuda.join()
@@ -197,18 +259,12 @@ class Viewer():
    
 
 class RenderViewers():
-    # look_at = np.array([0, 1, 3.5]) # for oguz
-    # look_at = np.array([1, 1, 3.5]) # for yoga 
-    
-    look_at = np.array([-0.28, 1.65, 0.09]) 
-    # roll_limit = (0.4, -1.0)
+  
     roll_limit = (np.pi, -np.pi) 
 
-    # pitch_limit = (1.4, -1.3)
-    # pitch_limit = (np.pi, -np.pi) #f
-    distance_in = 3 #2 
+    
+    distance_in = 2 #2 
     distance_out = 20 #4.5
-    # distance = 7 #for yoga
 
     def __init__(self, viewer, client ):
         self.viewer = viewer
@@ -224,6 +280,16 @@ class RenderViewers():
         self.thread_encode = threading.Thread(target=self.encode_image)
         self.running = True
         self.scene_data = viewer.scene_data
+        self.look_at = viewer.look_at
+        # with client.gui.add_folder("Playback"):
+        self.gui_play_button  = client.gui.add_button(" Play", icon=viser.Icon.PLAYER_PLAY)
+        self.gui_pause_button  = client.gui.add_button(" Pause", icon=viser.Icon.PLAYER_PAUSE)
+        self.gui_pause_button.disabled = True
+        self.gui_play_button.disabled = False
+        # self.gui_start_button = viewer.gui_start_button
+        self.gui_play_button.on_click(self.handle_on_play_click)
+        self.gui_pause_button.on_click(self.handle_on_pause_click)
+
         self.w = viewer.w
         self.h = viewer.h
         self.far = viewer.far
@@ -232,12 +298,27 @@ class RenderViewers():
         self.first_enter = False
         self.cnt=0
         self.data_ready = False
-        self.interval = 1.0/(30)
+        self.frame_rate = 30
+
+        self.interval = 1.0/(self.frame_rate)
+        self.isPaused = True
+    def handle_on_play_click(self, _):
+        
+       
+        if not self.gui_play_button.disabled:
+            self.gui_play_button.disabled = True
+            self.gui_pause_button.disabled = False
+            self.isPaused = False
+    def handle_on_pause_click(self, _):
+        if not self.gui_pause_button.disabled:
+            self.gui_play_button.disabled = False
+            self.gui_pause_button.disabled = True
+            self.isPaused = True
 
 
     def start(self):
         self.thread_cuda.start()
-        # time.sleep(0.1)
+        time.sleep(0.5)
         self.thread_encode.start()
     def encode_image(self):
         while self.running:
@@ -257,7 +338,7 @@ class RenderViewers():
                     try:
                         
                         
-                        # media_type, size, encoded_image = jpeg_encoder.encode_image_binary(image, self.format, self.quality)
+                        # media_type, size, encoded_image = encoder.encode_image_binary(image, self.format, self.quality)
                         media_type, size, encoded_image = jpeg_encoder.encode_image_binary2(image.data_ptr(), size, height, width, self.format, self.quality)
                         # media_type, size, encoded_image = encoder.encode_image_binaryturbojpeg(image.data_ptr(), size, height, width, self.format, self.quality)
 
@@ -281,83 +362,89 @@ class RenderViewers():
             
     def render_images(self):
         num_timestamps = len(self.scene_data)
-        self.t0 = time.time() + self.interval*3
+        t0 = time.time() + self.interval*3
         c2w = np.eye(4)
         w2c = np.eye(4)
         while self.running:
-              
+            self.frame_number = 0 
+            current_ts = 0
+            previous_ts = 0  
             for t in range(num_timestamps):   
-                if t != 10:
-                    continue
-                if not self.first_enter: 
-                    self.client.camera.wxyz = self.init_camera()[0]
-                    self.client.camera.position = self.init_camera()[1] 
-                    # self.client.camera.look_at= np.array([0, 1, 3.5]) #for oguz
-                    self.client.camera.look_at= self.look_at # for yoga 
-                    self.first_enter = True
+                # if t != 10:
+                #     continue
+                if current_ts >= num_timestamps or not self.running:
+                      break
+                while True:
+                    if not self.running:
+                        break
+                    if not self.first_enter: 
+                        self.client.camera.wxyz = self.init_camera()[0]
+                        self.client.camera.position = self.init_camera()[1] 
+                        # self.client.camera.look_at= np.array([0, 1, 3.5]) #for oguz
+                        self.client.camera.look_at= self.look_at # for yoga 
+                        self.first_enter = True
 
-                R_S03 = tf.SO3(np.asarray(self.client.camera.wxyz))
-                # print(R_S03.compute_roll_radians(), R_S03.compute_pitch_radians(), R_S03.compute_yaw_radians())
-                R = R_S03.as_matrix()
-                T = self.client.camera.position
-                start = time.time()
+                    R_S03 = tf.SO3(np.asarray(self.client.camera.wxyz))
+                    # print(R_S03.compute_roll_radians(), R_S03.compute_pitch_radians(), R_S03.compute_yaw_radians())
+                    R = R_S03.as_matrix()
+                    T = self.client.camera.position
+                    start = time.time()
 
                 # if #(R_S03.compute_roll_radians() <  self.roll_limit[0]  and R_S03.compute_roll_radians() >  self.roll_limit[1] ) 
-                if  np.linalg.norm(self.look_at - T)  > self.distance_in and  np.linalg.norm(self.look_at - T) < self.distance_out:
-                    
-                    c2w = np.vstack((np.concatenate((R, T[:,None]), axis=1),[0,0,0,1]))
-                    w2c = np.linalg.inv(c2w)
-                    # w2c_prev = w2c.copy()
-                else:
-                            
-                    c2w = np.linalg.inv(w2c)
+                    if  np.linalg.norm(self.look_at - T)  > self.distance_in and  np.linalg.norm(self.look_at - T) < self.distance_out:
+                        
+                        c2w = np.vstack((np.concatenate((R, T[:,None]), axis=1),[0,0,0,1]))
+                        w2c = np.linalg.inv(c2w)
+                        # w2c_prev = w2c.copy()
+                    else:
+                                
+                        c2w = np.linalg.inv(w2c)
 
-                    self.client.camera.position = c2w[:3,3] 
-                    self.client.camera.wxyz = tf.SO3.from_matrix(c2w[:3,:3]).wxyz
-                    self.client.camera.look_at = self.look_at 
-                    # print("inside", tf.SO3.from_matrix(c2w[:3,:3]).as_rpy_radians())
+                        self.client.camera.position = c2w[:3,3] 
+                        self.client.camera.wxyz = tf.SO3.from_matrix(c2w[:3,:3]).wxyz
+                        self.client.camera.look_at = self.look_at 
+                        # print("inside", tf.SO3.from_matrix(c2w[:3,:3]).as_rpy_radians())
 
                 
                 
-                self.img = self._render(w2c, self.scene_data[t], bg=[0, 0, 0])
+                    self.img = self._render(w2c, self.scene_data[current_ts], bg=[0, 0, 0])
                 
               
 
+                        
+                    self.encode_event.set()
+                    
+                    self.cuda_event.wait()
+                    # if not self.running:
+                    #     break
+                    delta = t0 - time.time()
+                    if delta > 0:
+                        time.sleep(delta)
+                    t0 = time.time() + self.interval
+                    self.client.scene.set_background_image2(
+                        self.g,
+                        "image/jpeg",
+                    )
+
+                    self.cuda_event.clear()
+
+                    if not self.isPaused:
+                        previous_ts =  t
+                        current_ts = t + 1
+                        break
+                    else:
+                        current_ts = previous_ts
+                    end = time.time()
+                    if self.cnt % 20 ==0:
+                        print(f"{self.client.client_id}. Client Render fps:", 1/(end-start))
                 
-                self.encode_event.set()
-                
-                self.cuda_event.wait()
-                if not self.running:
-                    break
-                delta = self.t0 - time.time()
-                if delta > 0:
-                    time.sleep(delta)
-                self.t0 = time.time() + self.interval
-                self.client.scene.set_background_image2(
-                    self.g,
-                    "image/jpeg",
-                )
 
-                self.cuda_event.clear()
-
-
-
-
-
+        self.encode_event.set()
 
                     
-                # with self.lock:
-                #     self.condition.notify()
-                #     while not self.ready:
-                #         self.condition.wait()
-                #     self.ready = False
-                    # self.condition.wait()
-                
+               
 
                
-                end = time.time()
-                if self.cnt % 20 ==0:
-                    print(f"{self.client.client_id}. Client Render fps:", 1/(end-start))
                 
 
 
@@ -372,23 +459,45 @@ class RenderViewers():
             im =  im.permute(1,2,0).contiguous()
             im = (im.clamp(0,1)*255).to(torch.uint8)
             return im
-    @classmethod
    
-    def init_camera(cls, y_angle=0., center_dist=5, cam_height= 1.5, f_ratio=0.82):
+    # @classmethod
+    # def init_camera(cls, y_angle=0., center_dist=-3.0, cam_height= 1, f_ratio=0.82):
+    #     ry = y_angle * np.pi / 180
+    #     # w2c = np.array([[np.cos(ry), 0., -np.sin(ry), -0.0],
+    #     #                 [0.,         1., 0.,          cam_height],
+    #     #                 [np.sin(ry), 0., np.cos(ry),  center_dist],
+    #     #                 [0.,         0., 0.,          1.]])
+    #     w2c = np.array([[np.cos(ry), 0., -np.sin(ry), -2.0],
+    #                     [0.,         1., 0.,          cam_height],
+    #                     [np.sin(ry), 0., np.cos(ry),  center_dist],
+    #                     [0.,         0., 0.,          1.]])
+    #     c2w = np.linalg.inv(w2c)
+        
+    #     c2w = np.linalg.inv(w2c)
+    #     wxyz = tf.SO3.from_matrix(c2w[:3,:3]).wxyz
+    #     return wxyz, c2w[:3,3] 
+
+    @classmethod
+    def init_camera(cls, y_angle=0., center_dist=4., cam_height= 3., f_ratio=0.82):
         ry = y_angle * np.pi / 180
         # w2c = np.array([[np.cos(ry), 0., -np.sin(ry), -0.0],
         #                 [0.,         1., 0.,          cam_height],
         #                 [np.sin(ry), 0., np.cos(ry),  center_dist],
         #                 [0.,         0., 0.,          1.]])
-        w2c = np.array([[np.cos(ry), 0., -np.sin(ry), -2.0],
-                        [0.,         1., 0.,          cam_height],
-                        [np.sin(ry), 0., np.cos(ry),  center_dist],
-                        [0.,         0., 0.,          1.]])
-        c2w = np.linalg.inv(w2c)
         
-        c2w = np.linalg.inv(w2c)
+        c2w = np.array([[-0.94743326, -0.0982282 , -0.30450196,  2.2777 ],
+                [-0.09894314,  0.99500657, -0.01312203 , 0.185],
+                [ 0.3042704 ,  0.01769613, -0.95242132,  6.5],
+                [ 0.  ,        0.    ,      0.  ,        1.        ]])
+        
+        # c2w = np.array([[-0.95418331, -0.12057518 , -0.27385366 , 2.13062697],
+        #     [-0.09921866 , 0.9909332,  -0.09059276 , -1.56769998],
+        #     [ 0.28229393, -0.05927071 ,-0.95749523 , 8.50743482],
+        #     [ 0. ,         0.  ,        0.  ,        1.        ]])
+        # c2w = np.linalg.inv(w2c)
         wxyz = tf.SO3.from_matrix(c2w[:3,:3]).wxyz
         return wxyz, c2w[:3,3]  
+
 
 
 
@@ -433,26 +542,69 @@ if __name__ == "__main__":
     # exp_name ="hamit_3_27-11-2024_scl4_600_iter_multi_test1"
     # sequence = "hamit_3_27-11-2024_multi"
 
-    # exp_name ="hamit_3_27-11-2024_scl1_600_iter_enhanced_test1"
-    # sequence = "hamit_3_27-11-2024_enhanced" 
-
-    # exp_name ="hamit_2024-12-04_17-14-42_scl_2_it_600_test1"
+    # exp_name ="hamit_2024-12-04_16-58-12_evenly_scl_4_it_600_test1"
+    # sequence ="2024-12-04_16-58-12_evenly"
+    # exp_name ="hamit_2024-12-04_17-14-42_scl_4_it_600_test1"
     # sequence = "2024-12-04_17-14-42"
-    # exp_name ="hamit_2024-12-04_16-58-12_evenly_scl_2_it_600_test1"
-    # sequence = "2024-12-04_16-58-12_evenly"
+
+    # exp_name ="hamit_2024-12-04_16-58-12_evenly_withbckgrnd_scl_4_it_600_test1"
+    # sequence ="2024-12-04_16-58-12_evenly_withbckgrnd"
+    
+    # exp_name = "hamit_2024-12-12_10-29-44_4096_scl_2_it_500_test1"
+    # sequence  = "2024-12-12_10-29-44_4096_52mm_singlecam_4096"
+    
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_scl_2_it_1200"
+    # sequence = "2024-12-19_19-12-14_4096"
+    
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_scl_2_it_700"
+    # sequence = "2024-12-19_19-12-14_4096_wo_bckgrnd"
+
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_0-350_scl_2_it_700"
+    # sequence ="2024-12-19_19-12-14_4096_wo_bckgrnd_0-350"
+
+    # exp_name = "hamit_2024-12-19_20-11-26_4096_180_wo_bckgrnd_scl_2_it_700"
+    # sequence ="2024-12-19_20-11-26_4096_180_wo_bckgrnd"
+
+    exp_name = "hamit_2024-12-19_20-11-26_4096_180_scl_2_it_1000"
+    sequence = "2024-12-19_20-11-26_4096_180"
+
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_calib_scl_2_it_700"
+    # sequence  ="2024-12-19_19-12-14_4096_wo_bckgrnd_calib2"
+
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_enhanced_scl_1_it_700"
+    # sequence = "2024-12-19_19-12-14_4096_wo_bckgrnd_enhanced"
+
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_calib_scl_2_it_700"
+    # sequence = "2024-12-19_19-12-14_4096_wo_bckgrnd_calib_colmap"
+
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_calib_scl_2_it_700"
+    # sequence = "2024-12-19_19-12-14_4096_wo_bckgrnd_calib_meshroom"
+    
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_calib_scl_2_it_700"
+    # sequence = "2024-12-19_19-12-14_4096_wo_bckgrnd_calib_agisoft_test"
+
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_agisoft_scl_2_it_700"
+    # sequence = "2024-12-19_19-12-14_4096_wo_bckgrnd_agisoft_test"
 
 
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_calib_colmap_scl_2_it_700"
+    # sequence = "2024-12-19_19-12-14_4096_wo_bckgrnd_calib_colmap_basedon_calib"
 
-    # exp_name ="hamit_2024-12-04_17-14-42_withbckgrnd_scl_4_it_600_simplified"
-    # sequence = "2024-12-04_17-14-42_withbckgrnd"
+    # exp_name = "2025-03-27_15-46-48_yoga_ai_final_scl_1_intrv_0_1000"
+    exp_name = "2025-03-27_15-46-48_yoga_ai_final_scl_1_intrv_0_1000"
+    sequence = "2025-03-27_15-46-48_yoga_ai_final"
 
-    # exp_name = "hamit_2024-12-12_10-29-44_4096_scl_2_it_600_colmap"
-    # sequence  = "2024-12-12_10-29-44_4096"
+    # exp_name = "2025-03-27_15-44-28_yoga_ai_test_scl_1"
+    # sequence = "2025-03-27_15-44-28_yoga_ai_test"
 
-    exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_scl_2_it_700"
-    sequence = "2024-12-19_19-12-14_4096_wo_bckgrnd"
+    #exp_name = "2025-03-27_15-46-48_yoga_ai_final_scl_1_intrv_154_393"
+    #sequence =  "2025-03-27_15-46-48_yoga_ai_final"
 
-    viewer = Viewer(seq=sequence, exp=exp_name,w=1920, h=1080)
+    #exp_name = "2025-03-27_15-46-48_yoga_ai_final_scl_1_intrv_604_636"
+    #sequence =  "2025-03-27_15-46-48_yoga_ai_final"
+
+        
+    viewer = Viewer(seq=sequence, exp=exp_name,w=3000, h=1800)
     time.sleep(0.2)
     viewer.start_viewer()
    

@@ -10,9 +10,10 @@ from random import randint
 from tqdm import tqdm
 from diff_gaussian_rasterization import GaussianRasterizer as Renderer
 from helpers import setup_camera, l1_loss_v1, l1_loss_v2, weighted_l2_loss_v1, weighted_l2_loss_v2, quat_mult, \
-    o3d_knn, params2rendervar, params2cpu, save_params
+    o3d_knn, params2rendervar, params2cpu, save_params, save_single_params
 from external import calc_ssim, calc_psnr, build_rotation, densify, update_params_and_optimizer
 import shutil
+from sh_utils import RGB2SH
 
 class CustomError(Exception):
   pass
@@ -84,11 +85,17 @@ def initialize_params(seq, md):
     init_pt_cld = np.load(f"./data/{seq}/init_pt_cld.npz")["data"]
     seg = init_pt_cld[:, 6]
     max_cams = 50
+    max_sh_degree = 0
     sq_dist, _ = o3d_knn(init_pt_cld[:, :3], 3)
     mean3_sq_dist = sq_dist.mean(-1).clip(min=0.0000001)
+    # fused_color = RGB2SH(init_pt_cld[:, 3:6])
+    # features = np.zeros((fused_color.shape[0], 3, (max_sh_degree + 1) ** 2))
+    # features[:, :3, 0 ] = fused_color
+    # features[:, 3:, 1:] = 0.0
     params = {
         'means3D': init_pt_cld[:, :3],
         'rgb_colors': init_pt_cld[:, 3:6],
+        # 'rgb_colors': features,
         'seg_colors': np.stack((seg, np.zeros_like(seg), 1 - seg), -1),
         'unnorm_rotations': np.tile([1, 0, 0, 0], (seg.shape[0], 1)),
         'logit_opacities': np.zeros((seg.shape[0], 1)),
@@ -157,7 +164,7 @@ def get_loss(params, curr_data, variables, is_initial_timestep):
         curr_offset_mag = torch.sqrt((curr_offset ** 2).sum(-1) + 1e-20)
         losses['iso'] = weighted_l2_loss_v1(curr_offset_mag, variables["neighbor_dist"], variables["neighbor_weight"])
 
-        losses['floor'] = torch.clamp(fg_pts[:, 1], max = 2.7).mean()
+        # losses['floor'] = torch.clamp(fg_pts[:, 1], max = 2.7).mean()
 
         bg_pts = rendervar['means3D'][~is_fg]
         bg_rot = rendervar['rotations'][~is_fg]
@@ -239,7 +246,7 @@ def train(seq, exp,  scale=1):
     md = json.load(open(f"./data/{seq}/train_meta.json", 'r'))  # metadata
     num_timesteps = len(md['fn'])
 
-    save_interval = 10
+    save_interval = 3
     if num_timesteps > save_interval:
         save_iterations = [ iter  for iter in range(save_interval, num_timesteps) if iter % save_interval == 0]
     else :
@@ -287,16 +294,18 @@ def train(seq, exp,  scale=1):
         output_params.append(params2cpu(params, is_initial_timestep))
         if is_initial_timestep:
             variables = initialize_post_first_timestep(params, variables, optimizer)
+        
+        # save_single_params(output_params[t], seq, exp, t)
 
         if t in save_iterations:
             save_params(output_params, seq, exp)
-            if not os.path.exists(f'./output/{exp}/{seq}/init_pt_cld.npz'):
-                shutil.copy2(f'./data/{seq}/init_pt_cld.npz', f'./output/{exp}/{seq}/init_pt_cld.npz')
+            # if not os.path.exists(f'./output/{exp}/{seq}/init_pt_cld.npz'):
+            #     shutil.copy2(f'./data/{seq}/init_pt_cld.npz', f'./output/{exp}/{seq}/init_pt_cld.npz')
 
 
     save_params(output_params, seq, exp)
     if not os.path.exists(f'./output/{exp}/{seq}/init_pt_cld.npz'):
-                shutil.copy2(f'./data/{seq}/init_pt_cld.npz', f'./output/{exp}/{seq}/init_pt_cld.npz')
+        shutil.copy2(f'./data/{seq}/init_pt_cld.npz', f'./output/{exp}/{seq}/init_pt_cld.npz')
 
 
 
@@ -316,7 +325,7 @@ if __name__ == "__main__":
     # exp_name ="hamit_2024-12-04_16-58-12_evenly_scl_4_it_600_test1"
     # for sequence in ["2024-12-04_16-58-12_evenly"]: # ["hamit_3_27-11-2024_calib"]:  #["hamit_3_27-11-2024_withbkgrnd"]:
 
-    # exp_name ="hamit_2024-12-04_17-14-42_scl_2_it_600_test1"
+    # exp_name ="hamit_2024-12-04_17-14-42_scl_2_it_600_test7"
     # for sequence in ["2024-12-04_17-14-42"]: 
     
     # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_scl_2_it_1000_test1"
@@ -324,9 +333,11 @@ if __name__ == "__main__":
 
     # exp_name ="hamit_2024-12-04_17-14-42_withbckgrnd_scl_4_it_600_simplified"
     # for sequence in ["2024-12-04_17-14-42_withbckgrnd"]: 
-    exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_calib_trans_scl_2_it_700"
-    for sequence in ["2024-12-19_19-12-14_4096_wo_bckgrnd_calib2_trans"]:
+    # exp_name = "hamit_2024-12-19_19-12-14_4096_wo_bckgrnd_calib_trans_scl_2_it_700"
+    # for sequence in ["2024-12-19_19-12-14_4096_wo_bckgrnd_calib2_trans"]:
     
+    exp_name = "2024-12-04_17-14-42_10bestcams_scl_2_test2"
+    for sequence in ["2024-12-04_17-14-42_10bestcams"]:
         train(sequence, exp_name, scale=2)
         torch.cuda.empty_cache()
 

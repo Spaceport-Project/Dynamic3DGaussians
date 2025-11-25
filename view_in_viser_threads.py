@@ -167,7 +167,7 @@ class Viewer():
 
     def start_viewer(self):
         while True:
-            print("Total numer of clients connected:", len(self.render_viewers))
+            print("Total number of clients connected:", len(self.render_viewers))
             time.sleep(3)
     def signal_handler(self,sig, frame):
 

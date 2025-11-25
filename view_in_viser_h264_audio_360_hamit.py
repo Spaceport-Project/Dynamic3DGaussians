@@ -82,9 +82,11 @@ class Viewer():
     def handle_disconnect_client(self, client:viser.ClientHandle):
         print(f"{client.client_id} client disconnected!")
         self.render_viewers[client.client_id].running = False
-        # self.render_viewers[client.client_id].thread_cuda.join()
-        # self.render_viewers[client.client_id].thread_encode.join()
-        # self.render_viewers[client.client_id].thread_process_video_buffers.join()
+        self.render_viewers[client.client_id].thread_cuda.join()
+        self.render_viewers[client.client_id].thread_encode.join()
+        self.render_viewers[client.client_id].thread_process_video_buffers.join()
+        self.render_viewers[client.client_id].img = self.render_viewers[client.client_id].img.detach().cpu()
+        del self.render_viewers[client.client_id].img 
         self.render_viewers.pop(client.client_id)
 
 
@@ -101,7 +103,7 @@ class Viewer():
         # button = client.gui.add_button("Start/Pause Sound")
         # button.disabled = False
         print("new client!", client.client_id)
-        print("Total numer of clients connected to Hamit's demo:", len(self.render_viewers))
+        print("Total number of clients connected to Hamit's demo:", len(self.render_viewers))
         self.render_viewers[client.client_id] = RenderViewers(self, client)
         
         self.render_viewers[client.client_id].start()
@@ -164,7 +166,7 @@ class Viewer():
             if not self.running:
                 # time.sleep(1)
                 break
-            print("Total numer of clients connected to yoga demo:", len(self.render_viewers))
+            print("Total number of clients connected to the demo:", len(self.render_viewers))
             time.sleep(3600)
     def signal_handler(self,sig, frame):
 
@@ -192,7 +194,8 @@ class RenderViewers():
   
 
     look_at = np.array([-0.28, 1.65, 0.09]) 
-    roll_limit = (np.pi, -np.pi) 
+    theta_limits = (40, 110)
+
     distance_in = 3 #2 
     distance_out = 20 #4.5
 
@@ -416,8 +419,13 @@ class RenderViewers():
                     R = R_S03.as_matrix()
                     T = self.client.camera.position
                     # start = time.time()
-
-                    if  np.linalg.norm(self.look_at - T)  > self.distance_in and  np.linalg.norm(self.look_at - T) < self.distance_out:
+                    vec_to_look_at = self.look_at - T
+                    theta, phi = self.get_theta_phi_angles_from_cam_pos(vec_to_look_at)
+                    # print("Phi in degrees:", theta, " ",  np.linalg.norm(vec_to_look_at))
+              
+                    if (theta > self.theta_limits[0] and  theta < self.theta_limits[1] )  and \
+                        np.linalg.norm(vec_to_look_at)  > self.distance_in and \
+                        np.linalg.norm(vec_to_look_at) < self.distance_out:
 
                         c2w = np.vstack((np.concatenate((R, T[:,None]), axis=1),[0,0,0,1]))
                         w2c = np.linalg.inv(c2w)
@@ -490,7 +498,24 @@ class RenderViewers():
         # c2w = np.linalg.inv(w2c)
         wxyz = tf.SO3.from_matrix(c2w[:3,:3]).wxyz
         return wxyz, c2w[:3,3]  
+    
+    @classmethod
+    def get_theta_phi_angles_from_cam_pos(cls, position):
 
+        # Calculate the length (magnitude) of the position vector
+        position_length = np.linalg.norm(position)
+
+        # Calculate the polar angle (theta) relative to the y-axis
+        # Theta = arccos(y / ||position||)
+        theta = np.arccos(position[1] / position_length)
+        phi = np.arctan2(position[2], position[0])
+
+        # Convert theta to degrees
+        theta_degrees = np.degrees(theta)
+        phi_degrees = np.degrees(phi)  
+
+
+        return theta_degrees, phi_degrees
 
 
 if __name__ == "__main__":
@@ -522,7 +547,8 @@ if __name__ == "__main__":
     
     exp_name = "hamit_2024-12-04_17-14-42_scl_2_it_600_test1"
     sequence = "2024-12-04_17-14-42"
-        
+    # torch.cuda.set_per_process_memory_fraction(0.06)
+ 
     viewer = Viewer(seq=sequence, exp=exp_name,w=1920, h=1080)
     time.sleep(0.2)
     viewer.start_viewer()

@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cuda_runtime.h>
 #include <functional> 
+#include <map>  
 
 #include <gst/gst.h>
 #include <gst/app/gstappsrc.h>
@@ -28,7 +29,7 @@ struct App {
     GstAppSrc* audio_appsrc=NULL;
     GstElement *audio_appsink;    
 
-    GstCudaContext* context=NULL;
+    // GstCudaContext* context=NULL;
     GstElement* pipeline =NULL;
     unsigned int width ;
     unsigned int height ;
@@ -50,62 +51,64 @@ std::mutex cudaMutex;
 
 
 // App app;
-std::vector<App*> apps;
+// std::vector<App*> apps;
+std::map<int, App*> apps;
 
+void eraseAppFromMap(std::map<int, App*>& apps, int key) ;
 
-gboolean push_cuda_tensor_frame( uintptr_t cuda_ptr, size_t  size, unsigned int frame_number, unsigned int frame_rate, int cnt) {
+// gboolean push_cuda_tensor_frame( uintptr_t cuda_ptr, size_t  size, unsigned int frame_number, unsigned int frame_rate, int cnt) {
 
  
 
 
-    GstCaps* caps = gst_caps_from_string("video/x-raw(memory:CUDAMemory),format=RGB,width=1920,height=1080,framerate=30/1");
-    GstVideoInfo video_info;
-    gst_video_info_from_caps(&video_info, caps);
-    // std::cout<<"ptr:"<<(CUdeviceptr)gpu_ptr<<std::endl;
-    gst_cuda_context_push(apps[0]->context);
+//     GstCaps* caps = gst_caps_from_string("video/x-raw(memory:CUDAMemory),format=RGB,width=1920,height=1080,framerate=30/1");
+//     GstVideoInfo video_info;
+//     gst_video_info_from_caps(&video_info, caps);
+//     // std::cout<<"ptr:"<<(CUdeviceptr)gpu_ptr<<std::endl;
+//     gst_cuda_context_push(apps[0]->context);
 
-    {
+//     {
        
-        GstBuffer* buf = gst_buffer_new();
+//         GstBuffer* buf = gst_buffer_new();
         
-        GstMemory* memory = gst_cuda_allocator_alloc(NULL, apps[0]->context, NULL, &video_info);
-        if (memory != NULL && buf != NULL) {
-        // Map the memory to access it
-            GstMapInfo map;
-            if (gst_memory_map(memory, &map, GST_MAP_WRITE)) {
-                // Fill the memory with data (example: fill with zeros)
-                cudaMemcpy(map.data, (void *)cuda_ptr, size, cudaMemcpyDeviceToDevice);
+//         GstMemory* memory = gst_cuda_allocator_alloc(NULL, apps[0]->context, NULL, &video_info);
+//         if (memory != NULL && buf != NULL) {
+//         // Map the memory to access it
+//             GstMapInfo map;
+//             if (gst_memory_map(memory, &map, GST_MAP_WRITE)) {
+//                 // Fill the memory with data (example: fill with zeros)
+//                 cudaMemcpy(map.data, (void *)cuda_ptr, size, cudaMemcpyDeviceToDevice);
                
-                gst_memory_unmap(memory, &map);
-            // Step 4: Append the GstMemory to the GstBuffer
-                gst_buffer_append_memory(buf, memory);
-            } else {
-                // Handle mapping error
-                g_printerr("Failed to map memory.\n");
-            }
-        }
+//                 gst_memory_unmap(memory, &map);
+//             // Step 4: Append the GstMemory to the GstBuffer
+//                 gst_buffer_append_memory(buf, memory);
+//             } else {
+//                 // Handle mapping error
+//                 g_printerr("Failed to map memory.\n");
+//             }
+//         }
 
 
 
 
-        GstClockTime duration = GST_SECOND / frame_rate;
-        GST_BUFFER_PTS(buf) = frame_number * duration;
-        GST_BUFFER_DURATION(buf) = duration;
-        GstFlowReturn ret;
-        g_signal_emit_by_name(apps[cnt]->video_appsrc, "push-buffer", buf, &ret);
+//         GstClockTime duration = GST_SECOND / frame_rate;
+//         GST_BUFFER_PTS(buf) = frame_number * duration;
+//         GST_BUFFER_DURATION(buf) = duration;
+//         GstFlowReturn ret;
+//         g_signal_emit_by_name(apps[cnt]->video_appsrc, "push-buffer", buf, &ret);
 
-        if (ret != GST_FLOW_OK) {
-            std::cerr << "Error pushing buffer to appsrc" << std::endl;
-            return FALSE;
-        }
-        gst_buffer_unref(buf);
-    }
-    gpointer ctx = gst_cuda_context_get_handle (apps[0]->context);
-    gst_cuda_context_pop((CUctx_st**)ctx);
+//         if (ret != GST_FLOW_OK) {
+//             std::cerr << "Error pushing buffer to appsrc" << std::endl;
+//             return FALSE;
+//         }
+//         gst_buffer_unref(buf);
+//     }
+//     gpointer ctx = gst_cuda_context_get_handle (apps[0]->context);
+//     gst_cuda_context_pop((CUctx_st**)ctx);
     
    
-    return TRUE;
-}
+//     return TRUE;
+// }
 
 void push_tensor_frame(uintptr_t cuda_ptr, size_t  size, unsigned int frame_number, unsigned int frame_rate, int cnt) {
     // Create a GstBuffer that wraps the existing image data
@@ -307,8 +310,8 @@ int main_fun() {
     
     static int i = 0;
     int cnt = i;
-
-    apps.push_back(new (App){ .width=1920, .height=1080, .frame_rate=30});
+    apps[cnt] = new (App){ .width=1920, .height=1080, .frame_rate=30};
+    // apps.push_back(new (App){ .width=1920, .height=1080, .frame_rate=30});
     
     std::cout<<"Number of Clients connected:"<<cnt<<std::endl;
     // int argc = 0 ; 
@@ -346,22 +349,33 @@ int main_fun() {
     //     // 
     // NULL);
     
+    int width = 1920, height = 1080;
+    int bitrate = 10000;
+    int framerate = 30;
+
+    std::string gst_pipeline_str = 
+    "appsrc name=video_source do-timestamp=true format=TIME !  video/x-raw,format=RGB,width=" \
+    + std::to_string(width) + ",height=" + std::to_string(height) + ",framerate=" + std::to_string(framerate) \
+    + "/1 !  videoconvert ! video/x-raw,format=NV12 ! nvh264enc gop-size=30 bframes=0 preset=low-latency-hq zerolatency=true  rc-mode=cbr   bitrate=" + std::to_string(bitrate) + \
+    " ! video/x-h264,stream-format=avc,alignment=au ! h264parse ! appsink name=video_sink sync=false";
+    std::cout<<gst_pipeline_str<<std::endl;
+    apps[cnt]->pipeline = gst_parse_launch(gst_pipeline_str.c_str(), NULL);
 
 
-    apps[cnt]->pipeline = gst_parse_launch(
-        "appsrc name=video_source do-timestamp=true format=TIME ! "
-        "video/x-raw,format=RGB,width=1920,height=1080,framerate=30/1 ! " 
-        " videoconvert ! video/x-raw,format=NV12 ! nvh264enc gop-size=50 bitrate=1500 !  "
-        " video/x-h264,stream-format=avc,alignment=au ! "
-        " h264parse   ! "
-        // "  video/x-h264,stream-format=avc,alignment=au  ! "
-        //  config-interval=-1  ! video/x-h264,stream-format=byte-stream,alignment=au !"
-        // "queue ! "
-        "appsink name=video_sink sync=false",
-        // " mp4mux ! "
-        // " filesink location=output.mp4",
-        // 
-    NULL);
+    // apps[cnt]->pipeline = gst_parse_launch(
+    //     "appsrc name=video_source do-timestamp=true format=TIME ! "
+    //     "video/x-raw,format=RGB,width=1920,height=1080,framerate=30/1 ! " 
+    //     " videoconvert ! video/x-raw,format=NV12 ! nvh264enc gop-size=50 bitrate=1500 !  "
+    //     " video/x-h264,stream-format=avc,alignment=au ! "
+    //     " h264parse   ! "
+    //     // "  video/x-h264,stream-format=avc,alignment=au  ! "
+    //     //  config-interval=-1  ! video/x-h264,stream-format=byte-stream,alignment=au !"
+    //     // "queue ! "
+    //     "appsink name=video_sink sync=false",
+    //     // " mp4mux ! "
+    //     // " filesink location=output.mp4",
+    //     // 
+    // NULL);
 
     //  apps[cnt]->pipeline = gst_parse_launch(
     //     "appsrc name=video_source do-timestamp=true format=TIME ! "
@@ -423,8 +437,8 @@ int main_fun() {
     gst_object_unref(bus);
 
     // Create CUDA context
-    if (cnt == 0)
-        apps[cnt]->context = gst_cuda_context_new(0);
+    // if (cnt == 0)
+    //     apps[cnt]->context = gst_cuda_context_new(0);
 
     // Start playing
     gst_element_set_state(apps[cnt]->pipeline, GST_STATE_PLAYING);
@@ -451,22 +465,91 @@ void close_pipeline(int cnt){
 
     // Clean up
     gst_element_set_state(apps[cnt]->pipeline, GST_STATE_NULL);
-    gst_object_unref(GST_OBJECT(apps[cnt]->pipeline));
-    while (! apps[cnt]->video_buffer_queue.empty()) {
+    // gst_object_unref(GST_OBJECT(apps[cnt]->pipeline));
+    // while (! apps[cnt]->video_buffer_queue.empty()) {
        
-         apps[cnt]->video_buffer_queue.front() ;
+    //     //  apps[cnt]->video_buffer_queue.front() ;
        
-         apps[cnt]->video_buffer_queue.pop();
-    }
+    //      apps[cnt]->video_buffer_queue.pop();
+    // }
+
+    eraseAppFromMap(apps, cnt);
+    // apps.erase(cnt);
+
+
     
 
 }
+
+
+void eraseAppFromMap(std::map<int, App*>& apps, int key) {
+    // Find the element in the map
+    auto it = apps.find(key);
+    if (it != apps.end()) {
+        // Get the pointer to the App object
+        App* app = it->second;
+
+        // Clean up resources in the App object
+        if (app) {
+            // Free video buffer queue
+            {
+                // std::lock_guard<std::mutex> lock(app->video_queue_mutex);
+                while (!app->video_buffer_queue.empty()) {
+                    GstBuffer* buffer = app->video_buffer_queue.front();
+                    gst_buffer_unref(buffer); // Unref the GstBuffer
+                    app->video_buffer_queue.pop();
+                }
+            }
+
+            // Free audio buffer queue
+            {
+                // std::lock_guard<std::mutex> lock(app->audio_queue_mutex);
+                while (!app->audio_buffer_queue.empty()) {
+                    GstBuffer* buffer = app->audio_buffer_queue.front();
+                    gst_buffer_unref(buffer); // Unref the GstBuffer
+                    app->audio_buffer_queue.pop();
+                }
+            }
+
+            // Free GStreamer elements
+            if (app->pipeline) {
+                gst_object_unref(app->pipeline);
+            }
+            if (app->video_appsrc) {
+                gst_object_unref(app->video_appsrc);
+            }
+            if (app->video_appsink) {
+                gst_object_unref(app->video_appsink);
+            }
+            if (app->audio_appsrc) {
+                gst_object_unref(app->audio_appsrc);
+            }
+            if (app->audio_appsink) {
+                gst_object_unref(app->audio_appsink);
+            }
+            // if (app->context) {
+            //     gst_object_unref(app->context);
+            // }
+
+            // Delete the App object itself
+            delete app;
+        }
+
+        // Remove the entry from the map
+        apps.erase(it);
+    } else {
+        std::cerr << "Key " << key << " not found in the map." << std::endl;
+    }
+
+    // std::cout<<"Size of Apps:"<<apps.size()<<std::endl;
+}
+
 
 PYBIND11_MODULE(gst_h264_endoder_pipeline, m)
 {
     
     m.def("main_fun", &main_fun);
-    m.def("push_cuda_tensor_frame", &push_cuda_tensor_frame,py::call_guard<py::gil_scoped_release>() );
+    // m.def("push_cuda_tensor_frame", &push_cuda_tensor_frame,py::call_guard<py::gil_scoped_release>() );
     m.def("push_tensor_frame", &push_tensor_frame, py::call_guard<py::gil_scoped_release>());
     m.def("push_audio_packet", &push_audio_packet, py::call_guard<py::gil_scoped_release>());
 

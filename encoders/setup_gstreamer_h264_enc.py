@@ -14,6 +14,9 @@ inc_dirs = [
 	'/home/hamit/miniconda3/envs/nerfstudio/include/python3.8',
 ]
 
+opencv_cflags = os.popen('pkg-config --cflags opencv4').read().strip()
+print(opencv_cflags, pybind11.get_include())
+opencv_libs = os.popen('pkg-config --libs opencv4').read().strip()
 
 cuda_include = ['/usr/local/cuda/include']
 cuda_lib_dir = ['/usr/local/cuda/lib64']
@@ -28,10 +31,22 @@ ext_modules = [
       include_dirs= inc_dirs + [ pybind11.get_include() ] + cuda_include ,
       libraries = cuda_libs + gst_libs ,
       library_dirs = cuda_lib_dir + gst_libs_dir,
-      # extra_compile_args=opencv_cflags.split(),
-      # extra_link_args=opencv_libs.split(),
+      extra_compile_args=opencv_cflags.split(),
+      extra_link_args=opencv_libs.split(),
       language='c++'
   ),
+   Extension(
+      'gst_h264_endoder_pipeline_2',
+      ['gst_h264_endoder_pipeline_2.cpp'],
+      include_dirs= inc_dirs + [ pybind11.get_include() ] + cuda_include ,
+      libraries = cuda_libs + gst_libs ,
+      library_dirs = cuda_lib_dir + gst_libs_dir,
+      extra_compile_args=opencv_cflags.split(),
+      extra_link_args=opencv_libs.split(),
+      language='c++'
+  ),
+  
+
 ]
 
 setup(

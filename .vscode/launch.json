@@ -4,6 +4,7 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+    
         {
             "name": "Python Prepare and undistort dataset",
             "type": "debugpy",
@@ -45,7 +46,7 @@
             "name": "Python Colmap to data: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
-            "program": "data_making/colmap_to_data.py --colmap_path /home/hamit/DATA/19-12-2024_Data/2024-12-19_19-12-14_4096/processed_data_300-600_calib  --dataset_name 2024-12-19_19-12-14_4096_wo_bckgrnd_calib_colmap",
+            "program": "data_making/colmap_to_data.py --colmap_path /mnt/Elements2/04-12-2024_Data/2024-12-04_17-14-42/processed_data  --dataset_name 2024-12-04_17-14-42_10bestcams_2",
             "console": "integratedTerminal",
             "args": "${command:pickArgs}"
         },
@@ -76,7 +77,7 @@
             "name": "Python Train: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
-            "program": "train_scale_v2_2.py",
+            "program": "train_scale_2.py",
             "console": "integratedTerminal",
             "args": "${command:pickArgs}",
             "justMyCode": false
@@ -85,9 +86,10 @@
             "name": "Python Visualize: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
-            "program": "view_in_viser_threads_multiprocess.py",
+            "program": "3d_video_player_background_multiprocess_360_yoga_2025-08_demo_3_plane_shared.py",
             "console": "integratedTerminal",
             "args": "${command:pickArgs}",
+             "envFile": "${workspaceFolder}/gst_env.env",
             "justMyCode": false
         },
         {

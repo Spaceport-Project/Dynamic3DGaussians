@@ -72,7 +72,7 @@ class Viewer():
         self.seq = seq
         self.exp = exp
         self.viser_server = viser.ViserServer(port=8081)
-        self.viser_server.scene.world_axes.visible = True
+        self.viser_server.scene.world_axes.visible = False
         self.viser_server.on_client_connect(self.handle_new_client)
         self.viser_server.on_client_disconnect(self.handle_disconnect_client)
         self.clients_num = 0

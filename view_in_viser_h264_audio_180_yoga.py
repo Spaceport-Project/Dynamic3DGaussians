@@ -100,7 +100,7 @@ class Viewer():
         # button = client.gui.add_button("Start/Pause Sound")
         # button.disabled = False
         print("new client!", client.client_id)
-        print("Total numer of clients connected to yoga demo:", len(self.render_viewers))
+        print("Total number of clients connected to the demo:", len(self.render_viewers))
         self.render_viewers[client.client_id] = RenderViewers(self, client)
         
         self.render_viewers[client.client_id].start()
@@ -163,7 +163,7 @@ class Viewer():
             if not self.running:
                 # time.sleep(1)
                 break
-            print("Total numer of clients connected to yoga demo:", len(self.render_viewers))
+            print("Total number of clients connected to the demo:", len(self.render_viewers))
             time.sleep(3600)
     def signal_handler(self,sig, frame):
 
@@ -194,8 +194,8 @@ class RenderViewers():
     distance_out = 30 
 
     look_at = np.array([1, 1, 3.5]) # for yoga 
-    roll_limit = (0.4, -1.0)
-    pitch_limit = (1.4, -1.3)
+    theta_limits = (40, 110)
+    phi_limits = (0, 180)
   
     
 
@@ -409,15 +409,21 @@ class RenderViewers():
                     R = R_S03.as_matrix()
                     T = self.client.camera.position
                     # start = time.time()
+                    vec_to_look_at = self.look_at - T
+                    theta, phi = self.get_theta_phi_angles_from_cam_pos(vec_to_look_at)
+                    # print("Phi in degrees:", theta, " ",  np.linalg.norm(vec_to_look_at))
+                    if (theta > self.theta_limits[0] and  theta < self.theta_limits[1] )   and (phi > self.phi_limits[0] and \
+                        phi < self.phi_limits[1]) and  np.linalg.norm(vec_to_look_at)  > self.distance_in and \
+                        np.linalg.norm(vec_to_look_at) < self.distance_out:
 
-
-                    if (R_S03.compute_roll_radians() <  self.roll_limit[0]  and R_S03.compute_roll_radians() >  self.roll_limit[1] ) \
-                        and (R_S03.compute_pitch_radians() <  self.pitch_limit[0]  and R_S03.compute_pitch_radians() >  self.pitch_limit[1]) \
-                        and np.linalg.norm(self.look_at - T)  > self.distance_in and  np.linalg.norm(self.look_at - T) < self.distance_out:
+                    # if (R_S03.compute_roll_radians() <  self.roll_limit[0]  and R_S03.compute_roll_radians() >  self.roll_limit[1] ) \
+                    #     and (R_S03.compute_pitch_radians() <  self.pitch_limit[0]  and R_S03.compute_pitch_radians() >  self.pitch_limit[1]) \
+                    #     and np.linalg.norm(self.look_at - T)  > self.distance_in and  np.linalg.norm(self.look_at - T) < self.distance_out:
 
                     
                         c2w = np.vstack((np.concatenate((R, T[:,None]), axis=1),[0,0,0,1]))
                         w2c = np.linalg.inv(c2w)
+                        # print(repr(w2c),repr(c2w) )
                     else:
                                 
                         c2w = np.linalg.inv(w2c)
@@ -460,7 +466,7 @@ class RenderViewers():
     def _render(self, w2c, timestep_data, bg=[0,0,0]):
         with torch.no_grad():
             cam = setup_camera(self.w, self.h, self.k, w2c, self.near, self.far, bg=torch.tensor(bg)) #[0, 177./255, 64.0/255]
-            im, _, _, = Renderer(raster_settings=cam)(**timestep_data)
+            im, _, _ = Renderer(raster_settings=cam)(**timestep_data)
             # im[~is_fg] =  torch.tensor([0, 177./255, 64.0/255], dtype=torch.float32, device="cuda")
             # torchvision.utils.save_image(im, '{0:05d}'.format(cnt) + ".png")
             # im = torch.flip(im, dims=[0])
@@ -482,7 +488,23 @@ class RenderViewers():
         wxyz = tf.SO3.from_matrix(c2w[:3,:3]).wxyz
         return wxyz, c2w[:3,3]  
 
+    @classmethod
+    def get_theta_phi_angles_from_cam_pos(cls, position):
 
+        # Calculate the length (magnitude) of the position vector
+        position_length = np.linalg.norm(position)
+
+        # Calculate the polar angle (theta) relative to the y-axis
+        # Theta = arccos(y / ||position||)
+        theta = np.arccos(position[1] / position_length)
+        phi = np.arctan2(position[2], position[0])
+
+        # Convert theta to degrees
+        theta_degrees = np.degrees(theta)
+        phi_degrees = np.degrees(phi)  
+
+
+        return theta_degrees, phi_degrees
 
 if __name__ == "__main__":
 

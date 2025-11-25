@@ -1,9 +1,14 @@
+import gzip
+import pickle
 import torch
 import os
 import open3d as o3d
 import numpy as np
 import math
+import h5py  
+
 from diff_gaussian_rasterization import GaussianRasterizationSettings as Camera
+import zarr
 
 
 
@@ -82,7 +87,8 @@ def setup_camera(w, h, k, w2c, near=0.01, far=100, scale=1, bg=torch.tensor([0, 
         projmatrix=full_proj,
         sh_degree=0,
         campos=cam_center,
-        prefiltered=False
+        prefiltered=False,
+        # debug=False
     )
     return cam
 
@@ -90,6 +96,7 @@ def setup_camera(w, h, k, w2c, near=0.01, far=100, scale=1, bg=torch.tensor([0, 
 def params2rendervar(params):
     rendervar = {
         'means3D': params['means3D'],
+        # 'shs': params['rgb_colors'],
         'colors_precomp': params['rgb_colors'],
         'rotations': torch.nn.functional.normalize(params['unnorm_rotations']),
         'opacities': torch.sigmoid(params['logit_opacities']),
@@ -146,10 +153,29 @@ def params2cpu(params, is_initial_timestep):
                k in ['means3D', 'rgb_colors', 'unnorm_rotations']}
     return res
 
+def save_single_params(output_params, seq, exp, iter):
+    # if iter != "":
+    #     iter=f"_{iter}"
+    to_save = {}
+    for k in output_params.keys():
+        to_save[k] = output_params[k] 
+    os.makedirs(f"./output/{exp}/{seq}", exist_ok=True)
+    # Save with GZIP compression
+    # with gzip.open(f'./output/{exp}/{seq}/params_{iter}.pkl.gz', 'wb') as f:
+    #     pickle.dump(to_save, f)
+    # with h5py.File(f'./output/{exp}/{seq}/params_{iter}.h5', 'w') as f:
+    #     for key, array in to_save.items():
+    #         f.create_dataset(key, data=array, compression='gzip', compression_opts=9)
+    
+    root = zarr.group(f'./output/{exp}/{seq}/params_{iter}.zarr')
+    for key, array in to_save.items():
+        root.create_dataset(key, data=array, compression='blosc', compressor=zarr.Blosc(cname='zstd', clevel=7))
 
-def save_params(output_params, seq, exp, iter=""):
-    if iter is not "":
-        iter=f"_{iter}"
+
+    # np.savez_compressed(f"./output/{exp}/{seq}/params_{iter}", **to_save)
+
+def save_params(output_params, seq, exp):
+   
     to_save = {}
     for k in output_params[0].keys():
         if k in output_params[1].keys():
@@ -157,4 +183,4 @@ def save_params(output_params, seq, exp, iter=""):
         else:
             to_save[k] = output_params[0][k]
     os.makedirs(f"./output/{exp}/{seq}", exist_ok=True)
-    np.savez(f"./output/{exp}/{seq}/params{iter}", **to_save)
+    np.savez(f"./output/{exp}/{seq}/params", **to_save)

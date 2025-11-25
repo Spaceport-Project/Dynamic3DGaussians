@@ -61,6 +61,6 @@ def convert(src, dest):
 
 if __name__ == '__main__':
     # src ='/home/hamit/Softwares/Dynamic3DGaussians/data/juggle/init_pt_cld_org.npz'
-    src = '/home/hamit/Softwares/Dynamic3DGaussians/data/2024-12-19_20-11-26_4096_180/init_pt_cld.npz'
-    dest = '2024-12-19_20-11-26_4096.ply'
+    src = '/home/hamit/Softwares/Dynamic3DGaussians/output/2025-02-05_14-29-36_scl_1_test_start_1-56/2025-02-05_14-29-36/init_pt_cld.npz'
+    dest = '2025-02-05_14-29-36.ply'
     convert(src, dest)
