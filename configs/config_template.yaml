@@ -1,0 +1,111 @@
+# config_example.yaml
+
+# Sequence and experiment settings
+sequence:  "template_dataset"
+exp_name_prefix: "template_dataset_lr_"
+initial_timestep: 0
+final_timestep: 1
+
+# Paths
+data_dir: "./data"
+output_dir: "./output"
+init_params_file: points3D_filtered_sparse_origin_filtered.ply #"points3D_993.ply" #points3D_070.ply # Will use default if null
+
+# Model parameters
+max_num_splat: 1000000
+index_for_densify: 700
+max_sh_degree: 3
+scale: 1.0
+use_gpu_projections: false
+motion_use_gpu: false
+motion_gpu_backend: "raft"      # "raft", "opencv_raft", or "absdiff"
+motion_flow_threshold: 1.0       # RAFT flow magnitude threshold in pixels
+motion_raft_onnx_path: null      # required when motion_gpu_backend is "opencv_raft"
+motion_raft_onnx_width: null     # optional fixed ONNX inference width
+motion_raft_onnx_height: null    # optional fixed ONNX inference height
+motion_raft_onnx_use_cuda: true  # OpenCV DNN CUDA backend for ONNX RAFT
+# PyTorch RAFT memory optimization (when motion_gpu_backend is "raft")
+motion_raft_pytorch_max_height: 720   # Auto-downscale input above 720p for memory efficiency (null = no limit)
+motion_raft_pytorch_max_width: 1280   # Auto-downscale input above 1280p for memory efficiency (null = no limit)
+motion_raft_pytorch_use_mixed_precision: true  # Use float16 for inference (reduces memory usage by 2x)
+motion_raft_pytorch_gpu_device: null  # Which GPU to use for RAFT (null = default GPU, 0/1/2 = specific GPU for systems with multiple GPUs)
+motion_raft_pytorch_disable_batch: true  # Recommended for stability: avoid batch RAFT OOM/launch-failure spikes
+use_amp: false
+amp_dtype: "fp16"
+
+# Training iterations
+num_iter_per_timestep_for_initial_frame: 30000
+num_iter_per_timestep_for_non_initial_frames: 2000
+
+# Optimizer learning rates
+# lr_means3D: 0.00016
+lr_means3D_init: 0.00016
+lr_means3D_final: 0.0000016
+lr_means3D_delay_mult: 0.01 #0.01
+# lr_means3D_max_steps: 12000
+
+lr_f_dc: 0.0025
+lr_f_rest: 0.000125
+lr_seg_colors: 0.0
+lr_unnorm_rotations: 0.001
+lr_logit_opacities: 0.05
+lr_log_scales: 0.001
+lr_cam_m: 0.0001
+lr_cam_c: 0.0001
+
+# Loss weights
+loss_weight_im: 1.0
+loss_weight_seg: 3.0
+loss_weight_rigid: 4.0
+loss_weight_rot: 4.0
+loss_weight_iso: 2.0
+loss_weight_floor: 2.0
+loss_weight_bg: 20.0
+loss_weight_soft_f_dc_cons: 0.01
+loss_weight_soft_f_rest_cons: 0.01
+loss_weight_cam_c: 1.0
+loss_weight_cam_m: 1.0
+
+# Loss parameters
+loss_ratio: 0.80
+image_ssim_every: 1
+image_ssim_scale_when_sparse: true
+seg_loss_every: 1
+seg_loss_scale_when_sparse: true
+
+# Densification parameters
+densify_grad_threshold: 0.0002
+densification_interval: 100
+opacity_reset_interval: 3000
+densify_from_iter: 500
+densify_until_iter: 15000
+percent_dense: 0.01
+
+# KNN parameters
+num_knn: 20
+knn_weight_exp: -4000.0
+
+# Camera parameters
+near_plane: 1.0
+far_plane: 100.0
+max_cams: 50
+
+# Data loader parameters
+async_queue_size: 2
+lookahead_frames: 5
+
+# Reporting
+report_every_i: 100
+enable_timing_breakdown: true
+timing_sync_cuda: false
+timing_report_every_i: null
+save_images_every: 5
+save_image_ids: [0, 3, 10, 15]
+
+
+
+# Background color (RGB)
+bg_color: [0.0, 0.0, 0.0]
+
+# Misc
+scene_radius_multiplier: 1.1

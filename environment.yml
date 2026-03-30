@@ -1,0 +1,24 @@
+name: dynamic_gaussians
+channels:
+  - nvidia/label/cuda-12.6.0
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - cuda-toolkit
+  - pip=22.3.1
+  - pip:
+    - setuptools==75.3.0
+    - pillow
+    - open3d
+    - pydub
+    - plyfile
+    - onnxruntime-gpu
+    - "rembg[gpu,cli]"
+    - tbb
+    - numpy
+    - scipy
+    - tqdm
+    - pybind11
+    - kornia
+    - joblib
