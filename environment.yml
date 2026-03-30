@@ -6,7 +6,7 @@ channels:
 dependencies:
   - python=3.10
   - cuda-toolkit
-  - pip
+  - pip=22.3.1
   - pip:
     - pillow
     - open3d
