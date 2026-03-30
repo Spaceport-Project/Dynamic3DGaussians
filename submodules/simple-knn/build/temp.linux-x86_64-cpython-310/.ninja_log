@@ -1,7 +1,0 @@
-# ninja log v5
-0	9265	1774902734795160514	/home/mekya/workspace/DynamicsGaussians/submodules/simple-knn/build/temp.linux-x86_64-cpython-310/ext.o	6b4057a30f16057b
-11	7497	1774905929480662786	/home/mekya/workspace/DynamicsGaussians/submodules/simple-knn/build/temp.linux-x86_64-cpython-310/simple_knn.o	3d599793addf9367
-11	10979	1774905932890735014	/home/mekya/workspace/DynamicsGaussians/submodules/simple-knn/build/temp.linux-x86_64-cpython-310/ext.o	43e9dce0c1b439a1
-12	27829	1774905949805142378	/home/mekya/workspace/DynamicsGaussians/submodules/simple-knn/build/temp.linux-x86_64-cpython-310/spatial.o	7a7d0a3be74bed13
-13	10700	1774907752599425082	/home/mekya/workspace/DynamicsGaussians/submodules/simple-knn/build/temp.linux-x86_64-cpython-310/ext.o	43e9dce0c1b439a1
-13	27748	1774907769708620545	/home/mekya/workspace/DynamicsGaussians/submodules/simple-knn/build/temp.linux-x86_64-cpython-310/spatial.o	7a7d0a3be74bed13

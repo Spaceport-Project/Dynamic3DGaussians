@@ -14,7 +14,7 @@ The script itself (not just training) depends on packages such as `numpy`, `open
 **Run these steps once before anything else:**
 
 ```bash
-git clone --branch training --recurse-submodules https://github.com/Spaceport-Project/Dynamic3DGaussians.git
+git clone --branch mp42splat --recurse-submodules https://github.com/Spaceport-Project/Dynamic3DGaussians.git
 cd Dynamic3DGaussians
 conda env create --file environment.yml
 conda activate dynamic_gaussians
