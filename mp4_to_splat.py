@@ -122,9 +122,14 @@ def parse_arguments():
         help="Skip frame extraction (reuse existing frames)"
     )
     parser.add_argument(
-        "--skip_background_removal",
+        "--colmap",
         action='store_true',
-        help="Skip rembg post-processing (reuse existing background-removed undistorted images)"
+        help="Run the COLMAP reconstruction pipeline"
+    )
+    parser.add_argument(
+        "--background_removal",
+        action='store_true',
+        help="Run rembg background removal on undistorted COLMAP images"
     )
     parser.add_argument(
         "--rembg_model",
@@ -148,6 +153,11 @@ def parse_arguments():
         type=int,
         default=50,
         help="Number of radial bins used for density-dropoff detection (default: 50)"
+    )
+    parser.add_argument(
+        "--origin_filter",
+        action='store_true',
+        help="Run origin-based point cloud filtering (keep points within --origin_margin of the origin)"
     )
     parser.add_argument(
         "--create_meta",
@@ -1140,6 +1150,19 @@ def create_train_meta(output_dir, dataset_name="dataset", frame_start=0, frame_e
     return train_config_out
 
 
+def _copy_splat_plys_to_root(training_output_dir: str, dataset_name: str, root_dir: str) -> None:
+    """Copy the trained splat PLY file into root_dir as splat.ply."""
+    search_root = os.path.join(training_output_dir, dataset_name)
+    ply_files = sorted(Path(search_root).rglob("params_*.ply")) if os.path.isdir(search_root) else []
+    if not ply_files:
+        logger.warning(f"No splat PLY files found under {search_root}")
+        return
+    src = ply_files[-1]  # take the last (highest timestep index)
+    dest = os.path.join(root_dir, "splat.ply")
+    shutil.copy2(str(src), dest)
+    logger.info(f"Splat PLY saved: {dest}")
+
+
 def main():
     """Main entry point."""
     args = parse_arguments()
@@ -1153,7 +1176,7 @@ def main():
     logger.info(f"Target frames: {args.target_frames}")
     logger.info(f"Camera model: {args.camera}")
     logger.info(f"GPU enabled: {not args.no_gpu}")
-    logger.info(f"Background removal enabled: {not args.skip_background_removal}")
+    logger.info(f"Background removal enabled: {args.background_removal}")
     logger.info(f"rembg model: {args.rembg_model}")
     logger.info("=" * 70)
     
@@ -1186,43 +1209,41 @@ def main():
                 logger.warning(f"Input directory is empty: {input_dir}")
 
         # Run COLMAP pipeline
-        logger.info("\nStarting COLMAP pipeline...")
-        logger.info("=" * 70)
-
-        ply_path = run_colmap_pipeline(
-            args.output,
-            input_dir,
-            args.colmap_executable,
-            args.camera,
-            not args.no_gpu
-        )
-        # ply_path = os.path.join(args.output, "points3D_filtered_sparse.ply")
+        ply_path = os.path.join(args.output, "points3D_filtered_sparse.ply")
+        if args.colmap:
+            logger.info("\nStarting COLMAP pipeline...")
+            logger.info("=" * 70)
+            ply_path = run_colmap_pipeline(
+                args.output,
+                input_dir,
+                args.colmap_executable,
+                args.camera,
+                not args.no_gpu
+            )
        
         # ============================================================================
         # Origin-based point cloud filtering
         # ============================================================================
-        logger.info("\nFiltering 3-D points around origin...")
-        if args.auto_margin:
-            logger.info(f"Mode: auto density-dropoff detection ({args.density_bins} bins)")
-        else:
-            logger.info(f"Mode: manual margin={args.origin_margin}")
-        logger.info("=" * 70)
-        run_origin_filtering(ply_path, args.origin_margin,
-                             auto=args.auto_margin, density_bins=args.density_bins)
+        if args.origin_filter:
+            logger.info("\nFiltering 3-D points around origin...")
+            if args.auto_margin:
+                logger.info(f"Mode: auto density-dropoff detection ({args.density_bins} bins)")
+            else:
+                logger.info(f"Mode: manual margin={args.origin_margin}")
+            logger.info("=" * 70)
+            if os.path.exists(ply_path):
+                run_origin_filtering(ply_path, args.origin_margin,
+                                     auto=args.auto_margin, density_bins=args.density_bins)
+            else:
+                logger.warning(f"PLY file not found for origin filtering: {ply_path}")
 
-        if not args.skip_background_removal:
+        if args.background_removal:
             logger.info("\nStarting background removal on undistorted COLMAP images...")
             logger.info(f"rembg input directory: {undistorted_images_dir}")
             logger.info(f"rembg output directory: {rembg_dir}")
             logger.info("=" * 70)
             remove_backgrounds(undistorted_images_dir, rembg_dir, args.rembg_model)
             reorganize_rembg_outputs(rembg_dir, ims_dir, seg_dir)
-        else:
-            logger.info("Skipping background removal (using existing background-removed undistorted images)")
-            if not os.path.exists(rembg_dir) or not os.listdir(rembg_dir):
-                logger.warning(f"Background-removed image directory is empty: {rembg_dir}")
-            else:
-                reorganize_rembg_outputs(rembg_dir, ims_dir, seg_dir)
     
     # Create train_meta.json if requested
     if args.create_meta:
@@ -1245,7 +1266,13 @@ def main():
             if train_config_path is None:
                 logger.error("Skipping training because metadata/config generation failed")
             else:
-                run_training(train_config_path)
+                success = run_training(train_config_path)
+                if success:
+                    _copy_splat_plys_to_root(
+                        os.path.join(args.output, "training_output"),
+                        args.dataset_name,
+                        args.output,
+                    )
     
     logger.info("\nPipeline completed!")
     logger.info(f"Check output directory for results: {args.output}")

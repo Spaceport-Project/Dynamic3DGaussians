@@ -611,11 +611,11 @@ def save_params_to_ply_shs(params, mask, output_path, ind, file_suffix=""):
     
     os.makedirs(output_path, exist_ok=True)
     output_ply_path = os.path.join(output_path, f"params_{ind:03d}{file_suffix}.ply")
-    output_compr_ply_path = os.path.join(output_path, f"params_{ind:03d}{file_suffix}.compressed.ply" )
-    # PlyData([vertex_element], text=False).write(output_ply_path)
     PlyData([el]).write(output_ply_path)
-    cmd = ['splat-transform', '-w', output_ply_path,  output_compr_ply_path]
-    subprocess.run(cmd, check=True)
+
+    # output_compr_ply_path = os.path.join(output_path, f"params_{ind:03d}{file_suffix}.compressed.ply" )
+    # cmd = ['splat-transform', '-w', output_ply_path,  output_compr_ply_path]
+    # subprocess.run(cmd, check=True)
 
 iteration = 0
 

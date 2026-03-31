@@ -34,7 +34,7 @@ use_amp: false
 amp_dtype: "fp16"
 
 # Training iterations
-num_iter_per_timestep_for_initial_frame: 30000
+num_iter_per_timestep_for_initial_frame: 3000
 num_iter_per_timestep_for_non_initial_frames: 2000
 
 # Optimizer learning rates

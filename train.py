@@ -912,9 +912,9 @@ def train(config: TrainingConfig):
     exp = f"{exp_prefix}SH_{config.max_sh_degree}_maxnumsplat_{config.max_num_splat}_scale_{config.scale}_initialtimestep_{config.initial_timestep}_finaltimestep_{num_timesteps}"
     output_path = f"{config.output_dir}/{seq}/{exp}"
     
-    if os.path.exists(output_path):
-        print(f"Experiment '{exp}' for sequence '{seq}' already exists. Exiting.")
-        return
+    # if os.path.exists(output_path):
+    #     print(f"Experiment '{exp}' for sequence '{seq}' already exists. Exiting.")
+    #     return
     
 
     # Initialize Gaussian parameters from point cloud

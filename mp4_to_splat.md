@@ -13,11 +13,135 @@ The script itself (not just training) depends on packages such as `numpy`, `open
 
 **Run these steps once before anything else:**
 
+### Step 1 — Install CUDA 11.8 and 12.6 on ubuntu 22.04 based systems
+
 ```bash
-git clone --branch mp42splat --recurse-submodules https://github.com/Spaceport-Project/Dynamic3DGaussians.git
+# Add NVIDIA package repository
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt-get update
+
+# Install both CUDA versions
+sudo apt-get -y install cuda-toolkit-11-8
+sudo apt-get -y install cuda-toolkit-12-6
+```
+
+### Step 2 — Set Up Easy CUDA Switching
+
+```bash
+# Create CUDA switcher script
+cat > ~/.cuda_switcher.sh << 'EOF'
+#!/bin/bash
+cuda_switch() {
+    if [ -z "$1" ]; then
+        echo "Current CUDA version:"
+        nvcc --version 2>/dev/null | grep "release" || echo "CUDA not found in PATH"
+        echo ""
+        echo "Available CUDA installations:"
+        ls -d /usr/local/cuda-* 2>/dev/null | xargs -I {} basename {} || echo "No CUDA versions found"
+        echo ""
+        echo "Usage: cuda_switch <version>"
+        echo "Example: cuda_switch 11.8"
+        return 0
+    fi
+
+    local version=$1
+    local cuda_path="/usr/local/cuda-${version}"
+
+    if [ ! -d "$cuda_path" ]; then
+        echo "Error: CUDA $version not found at $cuda_path"
+        echo "Available versions:"
+        ls -d /usr/local/cuda-* 2>/dev/null | xargs -I {} basename {}
+        return 1
+    fi
+
+    export CUDA_HOME="$cuda_path"
+    export PATH="$cuda_path/bin:$(echo $PATH | sed "s|/usr/local/cuda-[^/]*/bin:||g")"
+    export LD_LIBRARY_PATH="$cuda_path/lib64:$(echo $LD_LIBRARY_PATH | sed "s|/usr/local/cuda-[^/]*/lib64:||g")"
+
+    echo "Switched to CUDA $version"
+    echo "CUDA_HOME: $CUDA_HOME"
+    nvcc --version | grep "release"
+}
+
+alias cuda11='cuda_switch 11.8'
+alias cuda12='cuda_switch 12.6'
+alias cuda_check='nvcc --version && echo "" && echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"'
+EOF
+
+# Add to bashrc and reload
+echo "source ~/.cuda_switcher.sh" >> ~/.bashrc
+source ~/.bashrc
+cuda12
+```
+
+Quick commands available after this:
+- `cuda11` — Switch to CUDA 11.8
+- `cuda12` — Switch to CUDA 12.6
+- `cuda_switch` — See available versions and current setup
+- `cuda_check` — Verify current CUDA and library paths
+
+### Step 3 — Build and Install COLMAP 4 from Source
+
+COLMAP must be compiled from source to get CUDA support. Switch to CUDA 12.6 first, then build.
+
+```bash
+cuda12
+
+# Install system dependencies
+sudo apt-get install -y \
+    git \
+    cmake \
+    ninja-build \
+    build-essential \
+    libboost-program-options-dev \
+    libboost-graph-dev \
+    libboost-system-dev \
+    libeigen3-dev \
+    libopenimageio-dev \
+    openimageio-tools \
+    libmetis-dev \
+    libgoogle-glog-dev \
+    libgtest-dev \
+    libgmock-dev \
+    libsqlite3-dev \
+    libglew-dev \
+    qt6-base-dev \
+    libqt6opengl6-dev \
+    libqt6openglwidgets6 \
+    libcgal-dev \
+    libceres-dev \
+    libsuitesparse-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libmkl-full-dev
+
+
+
+# Download and build COLMAP 4.0.2
+wget https://github.com/colmap/colmap/archive/refs/tags/4.0.2.tar.gz
+tar -xzf 4.0.2.tar.gz
+cd colmap-4.0.2
+mkdir build
+cd build
+cmake .. -GNinja \
+    -DCMAKE_CUDA_ARCHITECTURES=86
+ninja
+sudo ninja install
+cd ../..
+
+# Verify
+colmap -h
+```
+
+
+### Step 4 — Clone and Set Up the Environment
+
+```bash
+git clone --branch mp42splat --recursive https://github.com/Spaceport-Project/Dynamic3DGaussians.git
 cd Dynamic3DGaussians
 conda env create --file environment.yml
-conda activate dynamic_gaussians
+conda activate dynamic_gs
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
 pip install submodules/*
@@ -43,12 +167,13 @@ Key CLI arguments:
 Example:
 
 ```bash
-conda activate dynamic_gaussians
+conda activate dynamic_gs
 
 python mp4_to_splat.py \
   --input /path/to/video.mp4 \
   --output /path/to/run_output \
   --target_frames 120
+
 ```
 
 Expected output from this stage:
@@ -69,6 +194,7 @@ Key CLI arguments:
 - `--camera`: COLMAP camera model (default: `OPENCV`)
 - `--colmap_executable`: custom COLMAP binary path
 - `--no_gpu`: disable GPU acceleration
+- `--colmap`: run the COLMAP reconstruction pipeline (omit to skip)
 
 Important output folders/files:
 - `output/distorted/` (intermediate COLMAP DB and sparse models)
@@ -89,7 +215,7 @@ What happens:
 
 Key CLI arguments:
 - `--rembg_model` (default: `birefnet-general`)
-- `--skip_background_removal` (reuse existing rembg outputs)
+- `--background_removal`: run background removal (omit to skip)
 
 Execution behavior:
 - rembg is executed directly in the currently active environment: `rembg p -m <model> <input_dir> <output_dir>`
@@ -115,6 +241,7 @@ Modes:
   - Controlled by `--density_bins` (default: `50`)
 
 Key CLI arguments:
+- `--origin_filter`: run origin-based point cloud filtering (omit to skip)
 - `--origin_margin`
 - `--auto_margin`
 - `--density_bins`
@@ -159,7 +286,10 @@ python mp4_to_splat.py \
   --output /path/to/run_output \
   --target_frames 80 \
   --camera OPENCV \
+  --colmap \
+  --origin_filter \
   --auto_margin \
+  --background_removal \
   --create_meta \
   --dataset_name my_dataset \
   --run_training
@@ -170,7 +300,7 @@ python mp4_to_splat.py \
 Run only metadata + optional training from existing outputs:
 
 ```bash
-conda activate dynamic_gaussians
+conda activate dynamic_gs
 
 python mp4_to_splat.py \
   --input /path/to/video.mp4 \
@@ -181,13 +311,41 @@ python mp4_to_splat.py \
   --run_training
 ```
 
-Skip background removal:
+Run COLMAP + origin filter, skip background removal:
 
 ```bash
-conda activate dynamic_gaussians
+conda activate dynamic_gs
 
 python mp4_to_splat.py \
   --input /path/to/video.mp4 \
   --output /path/to/run_output \
-  --skip_background_removal
+  --colmap \
+  --origin_filter
+```
+
+Extract frames only (skip COLMAP and everything after):
+
+```bash
+conda activate dynamic_gs
+
+python mp4_to_splat.py \
+  --input /path/to/video.mp4 \
+  --output /path/to/run_output \
+  --target_frames 120
+```
+
+Run background removal + metadata on an existing COLMAP reconstruction:
+
+```bash
+conda activate dynamic_gs
+
+python mp4_to_splat.py \
+  --input /path/to/video.mp4 \
+  --output /path/to/run_output \
+  --skip_frame_extraction \
+  --origin_filter \
+  --auto_margin \
+  --background_removal \
+  --create_meta \
+  --dataset_name my_dataset
 ```

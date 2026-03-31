@@ -1,4 +1,4 @@
-name: dynamic_gaussians
+name: dynamic_gs
 channels:
   - nvidia/label/cuda-12.6.0
   - conda-forge
