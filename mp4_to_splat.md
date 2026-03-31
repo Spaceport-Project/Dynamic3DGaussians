@@ -309,7 +309,7 @@ Important generated dataset artifacts:
 ## Full Example (All 5 Stages)
 
 ```bash
-conda activate dynamic_gaussians
+conda activate dynamic_gs
 
 python mp4_to_splat.py \
   --input /path/to/video.mp4 \
