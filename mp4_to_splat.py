@@ -473,15 +473,17 @@ def _human(num_bytes: int) -> str:
 
 def detect_density_dropoff(points: np.ndarray, n_bins: int = 50) -> float:
     """
-    Analyse point density as a function of radial distance from the origin and
-    return the radius where density drops most drastically.
+    Analyse point counts as a function of radial distance from the origin and
+    return the radius beyond which the cloud genuinely becomes sparse.
 
     Strategy:
-      1. Bin points into spherical shells.
-      2. Normalise counts by shell volume so density is comparable across radii.
-      3. Smooth with a simple moving average to reduce noise.
-      4. Find the bin whose density derivative is the most steeply negative
-         (largest drop).  That bin edge becomes the auto margin.
+      1. Bin raw point counts into equal-width radial shells (no volume
+         normalisation — volume-normalised density inherently falls with r³,
+         which causes the gradient to fire in the interior of the cloud rather
+         than at its actual boundary).
+      2. Smooth with a 3-bin moving average to reduce histogram noise.
+      3. Find the last bin whose smoothed count exceeds a threshold (5 % of the
+         peak bin count).  Everything beyond that radius is treated as outliers.
     """
     distances = np.linalg.norm(points, axis=1)
     max_dist = float(distances.max())
@@ -489,28 +491,26 @@ def detect_density_dropoff(points: np.ndarray, n_bins: int = 50) -> float:
 
     counts, _ = np.histogram(distances, bins=bins)
 
-    # Volume of each spherical shell: (4/3)π(r_outer³ - r_inner³)
-    shell_volumes = (4.0 / 3.0) * np.pi * (bins[1:] ** 3 - bins[:-1] ** 3)
-    shell_volumes = np.where(shell_volumes < 1e-12, 1e-12, shell_volumes)  # avoid div-by-zero
-    density = counts / shell_volumes
-
     # 3-bin moving average to smooth noise
     kernel = np.ones(3) / 3.0
-    density_smooth = np.convolve(density, kernel, mode="same")
+    counts_smooth = np.convolve(counts.astype(float), kernel, mode="same")
 
-    # Derivative: drop at bin i means density[i+1] - density[i]
-    gradient = np.diff(density_smooth)
+    # Keep bins with at least 5 % of peak count
+    threshold = 0.05 * float(counts_smooth.max())
+    populated = np.where(counts_smooth >= threshold)[0]
 
-    # Largest negative step → sharpest density collapse
-    drop_idx = int(np.argmin(gradient))        # index in gradient array
-    dropoff_radius = float(bins[drop_idx + 1]) # right edge of that bin
+    if populated.size == 0:
+        dropoff_radius = max_dist
+    else:
+        last_idx = int(populated[-1])
+        dropoff_radius = float(bins[last_idx + 1])  # right edge of last populated bin
 
-    # Print a mini density profile to the log
-    logger.info("Radial density profile (bin centre → density):")
+    # Print a mini count profile to the log
+    logger.info("Radial count profile (bin centre → smoothed count):")
     bin_centres = 0.5 * (bins[:-1] + bins[1:])
-    for i, (r, d) in enumerate(zip(bin_centres, density_smooth)):
-        marker = " <-- DROP" if i == drop_idx else ""
-        logger.info(f"  r={r:7.3f}  density={d:.4e}{marker}")
+    for i, (r, c) in enumerate(zip(bin_centres, counts_smooth)):
+        marker = " <-- CUTOFF" if populated.size > 0 and i == int(populated[-1]) else ""
+        logger.info(f"  r={r:7.3f}  count={c:.1f}{marker}")
 
     logger.info(f"Auto-detected density dropoff radius: {dropoff_radius:.4f}")
     return dropoff_radius
@@ -605,7 +605,7 @@ def run_colmap_pipeline(source_path, image_path, colmap_executable, camera_model
         f'--FeatureExtraction.num_threads 32 '
         # f'--SiftExtraction.domain_size_pooling true '
         # f'--FeatureExtraction.max_image_size 80000 '
-        f'--AlikedExtraction.max_num_features 10000 '
+        f'--AlikedExtraction.max_num_features 20000 '
         f'--FeatureExtraction.use_gpu {use_gpu_flag}'
     )
     
@@ -616,13 +616,13 @@ def run_colmap_pipeline(source_path, image_path, colmap_executable, camera_model
     # Feature Matching
     # ============================================================================
     feat_matching_cmd = (
-        f'{colmap_cmd} exhaustive_matcher '
+        f'{colmap_cmd}  sequential_matcher '
         f'--database_path {source_path}/distorted/database.db '
         f'--FeatureMatching.type ALIKED_LIGHTGLUE '
-        f'--SiftMatching.cross_check 1 '
+        f'--SiftMatching.cross_check 0 '
         f'--FeatureMatching.max_num_matches 1000000 '
-        f'--SiftMatching.max_distance 0.7 '
-        f'--TwoViewGeometry.max_error 4.0 '
+        f'--SiftMatching.max_distance 0.4 '
+        f'--TwoViewGeometry.max_error 3.0 '
         f'--FeatureMatching.guided_matching false '
         f'--FeatureMatching.use_gpu {use_gpu_flag} '
         f'--FeatureMatching.gpu_index 0'
@@ -638,11 +638,13 @@ def run_colmap_pipeline(source_path, image_path, colmap_executable, camera_model
         f'--database_path {source_path}/distorted/database.db '
         f'--image_path {image_path_with_space}'
         f'--output_path {source_path}/distorted/sparse '
-        f'--Mapper.ba_refine_principal_point 1 '
+        f'--Mapper.ba_refine_principal_point 0 '
         f'--Mapper.ba_refine_extra_params 1 '
         f'--Mapper.filter_max_reproj_error 2.0 '
         f'--Mapper.init_max_error 2.0 '
-        f'--Mapper.multiple_models 1 '
+        f'--Mapper.multiple_models 0 '
+        f'--Mapper.ba_use_gpu 1 '
+        f'--Mapper.ba_gpu_index 0 '
         f'--Mapper.ba_global_function_tolerance=0.000001'
     )
     

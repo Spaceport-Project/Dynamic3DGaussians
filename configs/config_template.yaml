@@ -34,7 +34,7 @@ use_amp: false
 amp_dtype: "fp16"
 
 # Training iterations
-num_iter_per_timestep_for_initial_frame: 3000
+num_iter_per_timestep_for_initial_frame: 30000
 num_iter_per_timestep_for_non_initial_frames: 2000
 
 # Optimizer learning rates
@@ -99,8 +99,8 @@ report_every_i: 100
 enable_timing_breakdown: true
 timing_sync_cuda: false
 timing_report_every_i: null
-save_images_every: 5
-save_image_ids: [0, 3, 10, 15]
+save_images_every: 10
+save_image_ids: [0, 25, 40, 65]
 
 
 

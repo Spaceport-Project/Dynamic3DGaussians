@@ -20,5 +20,4 @@ dependencies:
     - scipy
     - tqdm
     - pybind11
-    - kornia
     - joblib

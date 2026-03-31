@@ -26,6 +26,35 @@ sudo apt-get -y install cuda-toolkit-11-8
 sudo apt-get -y install cuda-toolkit-12-6
 ```
 
+### Step 1b — Install cuDNN Libraries
+
+#### cuDNN for CUDA 11.8
+
+```bash
+wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-8.7.0.84_cuda11-archive.tar.xz
+tar -xf cudnn-linux-x86_64-8.7.0.84_cuda11-archive.tar.xz
+cd cudnn-linux-x86_64-8.7.0.84_cuda11-archive
+sudo cp include/cudnn*.h /usr/local/cuda-11.8/include
+sudo cp lib/libcudnn* /usr/local/cuda-11.8/lib64
+sudo chmod a+r /usr/local/cuda-11.8/include/cudnn*.h /usr/local/cuda-11.8/lib64/libcudnn*
+cd ..
+rm cudnn-linux-x86_64-8.7.0.84_cuda11-archive.tar.xz  cudnn-linux-x86_64-8.7.0.84_cuda11-archive/ -rf
+```
+
+#### cuDNN for CUDA 12.6
+
+```bash
+wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.1.1.17_cuda12-archive.tar.xz
+tar -xf cudnn-linux-x86_64-9.1.1.17_cuda12-archive.tar.xz
+cd cudnn-linux-x86_64-9.1.1.17_cuda12-archive
+sudo cp include/cudnn*.h /usr/local/cuda-12.6/include
+sudo cp lib/libcudnn* /usr/local/cuda-12.6/lib64
+sudo chmod a+r /usr/local/cuda-12.6/include/cudnn*.h /usr/local/cuda-12.6/lib64/libcudnn*
+cd ..
+rm cudnn-linux-x86_64-9.1.1.17_cuda12-archive.tar.xz  cudnn-linux-x86_64-9.1.1.17_cuda12-archive/ -rf
+
+```
+
 ### Step 2 — Set Up Easy CUDA Switching
 
 ```bash
@@ -143,6 +172,7 @@ cd Dynamic3DGaussians
 conda env create --file environment.yml
 conda activate dynamic_gs
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip install kornia
 pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
 pip install submodules/*
 ```
@@ -284,7 +314,7 @@ conda activate dynamic_gaussians
 python mp4_to_splat.py \
   --input /path/to/video.mp4 \
   --output /path/to/run_output \
-  --target_frames 80 \
+  --target_frames 70 \
   --camera OPENCV \
   --colmap \
   --origin_filter \

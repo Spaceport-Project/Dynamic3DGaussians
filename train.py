@@ -903,6 +903,11 @@ def train(config: TrainingConfig):
     seq = config.sequence
     exp_prefix = config.exp_name_prefix
 
+    # Reduce CUDA allocator fragmentation (helps when memory is tight).
+    # Must be set before the first CUDA allocation for this process.
+    import os as _os
+    _os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     # Load metadata (camera parameters, image paths, etc.)
     md = json.load(open(f"{config.data_dir}/{seq}/train_meta.json", 'r'))
     num_timesteps = len(md['fn']) if config.final_timestep is None else min(config.final_timestep, len(md['fn']))
@@ -930,6 +935,12 @@ def train(config: TrainingConfig):
     # Setup asynchronous data loader
     loader = AsyncDatasetLoader(md, seq, config, start_t=config.initial_timestep, 
                                 total_iterations=num_timesteps)
+
+    # OOM fallback: scale values to try in order if CUDA runs out of memory.
+    # config.scale is the starting point; each fallback step increases it.
+    _oom_scale_steps = [0.2, 0.3, 0.5, 1.0]  # increments added on each OOM
+    _oom_step_idx = 0
+    current_scale = config.scale
 
     # Main training loop over timesteps
     t = 0
@@ -961,6 +972,9 @@ def train(config: TrainingConfig):
         if dataset is None:
             print(f"Training of the dataset has ended!")
             return
+
+        # Track the scale used for this timestep so OOM recovery can reload.
+        _dataset_scale = current_scale
 
         # Initialize parameters for new timestep (motion prediction)
         if not is_initial_timestep:
@@ -1018,11 +1032,48 @@ def train(config: TrainingConfig):
                                                    i, config, active_sh_degree)
                 if loss is None:
                     continue
+
+                # Backpropagation
+                loss.backward()
+
+            except torch.cuda.OutOfMemoryError:
+                # Free all GPU image/seg tensors from the current dataset FIRST,
+                # before attempting to reload — otherwise the GPU is still full.
+                optimizer.zero_grad(set_to_none=True)
+                for _item in dataset:
+                    if _item.get('im') is not None:
+                        del _item['im']
+                        _item['im'] = None
+                    if _item.get('seg') is not None:
+                        del _item['seg']
+                        _item['seg'] = None
+                del curr_data
+                todo_dataset = []
+                torch.cuda.empty_cache()
+
+                if _oom_step_idx < len(_oom_scale_steps):
+                    new_scale = current_scale + _oom_scale_steps[_oom_step_idx]
+                    _oom_step_idx += 1
+                    print(
+                        f"[OOM] CUDA out of memory at scale={current_scale:.2f}. "
+                        f"Falling back to scale={new_scale:.2f} and reloading dataset for t={t}."
+                    )
+                    current_scale = new_scale
+                    _dataset_scale = current_scale
+                    bg = torch.tensor(config.bg_color)
+                    dataset = get_dataset(
+                        t, md, seq, iters,
+                        active_sh_degree=active_sh_degree,
+                        scale=current_scale, bg=bg, config=config
+                    )
+                    continue  # retry this iteration with the new scale
+                else:
+                    raise RuntimeError(
+                        f"CUDA OOM persists after all fallback scale steps "
+                        f"(final scale={current_scale:.2f}). Aborting."
+                    )
             except Exception as e:
                 raise Exception(f"An error occurred in loss function {e}")
-
-            # Backpropagation
-            loss.backward()
 
             with torch.no_grad():
                 try:
